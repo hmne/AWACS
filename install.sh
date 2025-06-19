@@ -145,17 +145,19 @@ show_progress() {
 wait_input() {
     echo ""
     if [[ "$INSTALL_LANGUAGE" == "ar" ]]; then
-        echo -e "${PURPLE}${BOLD}اختر رقم الخيار المطلوب: ${NC}"
+        echo -n -e "${PURPLE}${BOLD}اختر رقم الخيار المطلوب: ${NC}"
     else
-        echo -e "${PURPLE}${BOLD}Select option number: ${NC}"
+        echo -n -e "${PURPLE}${BOLD}Select option number: ${NC}"
     fi
-    echo -n -e "${YELLOW}${BOLD}► ${NC}"
     
-    # Use timeout to prevent hanging
-    if ! read -r -t 300 USER_INPUT; then
-        echo ""
-        echo -e "${YELLOW}${BOLD}No input received, using default...${NC}"
-        USER_INPUT=""
+    # Force reading from terminal
+    read -r USER_INPUT < /dev/tty
+    
+    # Show confirmation
+    if [[ -n "$USER_INPUT" ]]; then
+        echo -e "${GREEN}✓ Selected: $USER_INPUT${NC}"
+    else
+        echo -e "${YELLOW}✓ Using default${NC}"
     fi
 }
 
@@ -184,17 +186,23 @@ select_language() {
     case "$USER_INPUT" in
         "1") 
             INSTALL_LANGUAGE="en"
+            echo -e "${GREEN}Selected: English${NC}"
             ;;
         "2") 
             INSTALL_LANGUAGE="ar"
+            echo -e "${GREEN}Selected: العربية${NC}"
             ;;
         "3"|"") 
             INSTALL_LANGUAGE="both"
+            echo -e "${GREEN}Selected: Bilingual | ثنائي اللغة${NC}"
             ;;
         *)
             INSTALL_LANGUAGE="both"
+            echo -e "${YELLOW}Invalid input, using default: Bilingual${NC}"
             ;;
     esac
+    
+    sleep 2  # Give user time to see selection
 }
 
 # ===============================================
@@ -243,14 +251,19 @@ select_setup_mode() {
     case "$USER_INPUT" in
         "1"|"") 
             SETUP_MODE="simple"
+            echo -e "${GREEN}Selected: Simple Setup | إعداد بسيط${NC}"
             ;;
         "2") 
             SETUP_MODE="advanced"
+            echo -e "${GREEN}Selected: Advanced Setup | إعداد متقدم${NC}"
             ;;
         *)
             SETUP_MODE="simple"
+            echo -e "${YELLOW}Invalid input, using default: Simple Setup${NC}"
             ;;
     esac
+    
+    sleep 2  # Give user time to see selection
 }
 
 # ===============================================
@@ -1458,6 +1471,9 @@ show_installation_summary() {
 # ===============================================
 
 main() {
+    # Force interactive terminal
+    exec < /dev/tty
+    
     # Interactive setup first (doesn't need root)
     select_language
     select_setup_mode
