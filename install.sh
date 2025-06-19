@@ -47,6 +47,12 @@ CONFIG_STEALTH_MODE="no"
 CONFIG_CREATE_SERVICE="yes"
 CONFIG_START_NOW="yes"
 
+# Additional advanced configuration variables
+CONFIG_DEBUG_MODE="no"
+CONFIG_TEST_MODE="no"
+CONFIG_HARDWARE_CHECK="yes"
+CONFIG_MULTI_INTERFACE="yes"
+
 # ===============================================
 # VISUAL FUNCTIONS | دوال الواجهة البصرية
 # ===============================================
@@ -1160,14 +1166,19 @@ download_awacs() {
 
 apply_configuration() {
     local step=1
-    local total_steps=6
+    local total_steps=8
     
-    show_progress $step $total_steps "Applying configuration"
+    show_progress $step $total_steps "Applying basic configuration"
     
-    # Apply configuration to awacs.sh
+    # Apply basic configuration to awacs.sh
     sed -i "s/LANGUAGE=\"both\"/LANGUAGE=\"$CONFIG_LANGUAGE\"/" awacs.sh
     sed -i "s/LOG_MODE=\"local\"/LOG_MODE=\"$CONFIG_LOG_MODE\"/" awacs.sh
     sed -i "s/SPEED_MODE=\"balanced\"/SPEED_MODE=\"$CONFIG_SPEED_MODE\"/" awacs.sh
+    
+    step=$((step + 1))
+    show_progress $step $total_steps "Configuring device settings"
+    
+    # Device configuration
     sed -i "s/DEVICE_ID=\"AWACS-1\"/DEVICE_ID=\"$CONFIG_DEVICE_ID\"/" awacs.sh
     sed -i "s/DEVICE_NAME=\"AWACS WiFi Manager\"/DEVICE_NAME=\"$CONFIG_DEVICE_NAME\"/" awacs.sh
     sed -i "s/DEFAULT_DIR_NAME=\"awacs\"/DEFAULT_DIR_NAME=\"$CONFIG_DEFAULT_DIR_NAME\"/" awacs.sh
@@ -1175,6 +1186,7 @@ apply_configuration() {
     step=$((step + 1))
     show_progress $step $total_steps "Configuring paths"
     
+    # Custom paths configuration
     if [[ -n "$CONFIG_CUSTOM_WORK_DIR" ]]; then
         sed -i "s|CUSTOM_WORK_DIR=\"\"|CUSTOM_WORK_DIR=\"$CONFIG_CUSTOM_WORK_DIR\"|" awacs.sh
     fi
@@ -1183,9 +1195,18 @@ apply_configuration() {
         sed -i "s|CUSTOM_LOG_DIR=\"\"|CUSTOM_LOG_DIR=\"$CONFIG_CUSTOM_LOG_DIR\"|" awacs.sh
     fi
     
+    if [[ -n "$CONFIG_CUSTOM_TEMP_DIR" ]]; then
+        sed -i "s|CUSTOM_TEMP_DIR=\"\"|CUSTOM_TEMP_DIR=\"$CONFIG_CUSTOM_TEMP_DIR\"|" awacs.sh
+    fi
+    
+    if [[ -n "$CONFIG_CUSTOM_CONFIG_DIR" ]]; then
+        sed -i "s|CUSTOM_CONFIG_DIR=\"\"|CUSTOM_CONFIG_DIR=\"$CONFIG_CUSTOM_CONFIG_DIR\"|" awacs.sh
+    fi
+    
     step=$((step + 1))
     show_progress $step $total_steps "Configuring remote logging"
     
+    # Remote logging configuration
     sed -i "s/REMOTE_LOGGING=\"no\"/REMOTE_LOGGING=\"$CONFIG_REMOTE_LOGGING\"/" awacs.sh
     if [[ -n "$CONFIG_REMOTE_URL" ]]; then
         sed -i "s|REMOTE_URL=\"\"|REMOTE_URL=\"$CONFIG_REMOTE_URL\"|" awacs.sh
@@ -1194,9 +1215,38 @@ apply_configuration() {
     step=$((step + 1))
     show_progress $step $total_steps "Configuring network options"
     
+    # Network options
     sed -i "s/AUTO_CONNECT_OPEN=\"yes\"/AUTO_CONNECT_OPEN=\"$CONFIG_AUTO_CONNECT_OPEN\"/" awacs.sh
     sed -i "s/CONNECT_HIDDEN=\"yes\"/CONNECT_HIDDEN=\"$CONFIG_CONNECT_HIDDEN\"/" awacs.sh
     sed -i "s/NIGHT_MODE=\"yes\"/NIGHT_MODE=\"$CONFIG_NIGHT_MODE\"/" awacs.sh
+    
+    step=$((step + 1))
+    show_progress $step $total_steps "Applying advanced settings"
+    
+    # Advanced settings (if configured in advanced mode)
+    if [[ "$SETUP_MODE" == "advanced" ]]; then
+        if [[ -n "$CONFIG_STEALTH_MODE" ]]; then
+            sed -i "s/STEALTH_MODE=\"no\"/STEALTH_MODE=\"$CONFIG_STEALTH_MODE\"/" awacs.sh
+        fi
+        if [[ -n "$CONFIG_DEBUG_MODE" ]]; then
+            sed -i "s/DEBUG_MODE=\"no\"/DEBUG_MODE=\"$CONFIG_DEBUG_MODE\"/" awacs.sh
+        fi
+        if [[ -n "$CONFIG_TEST_MODE" ]]; then
+            sed -i "s/TEST_MODE=\"no\"/TEST_MODE=\"$CONFIG_TEST_MODE\"/" awacs.sh
+        fi
+        if [[ -n "$CONFIG_HARDWARE_CHECK" ]]; then
+            sed -i "s/HARDWARE_CHECK=\"yes\"/HARDWARE_CHECK=\"$CONFIG_HARDWARE_CHECK\"/" awacs.sh
+        fi
+        if [[ -n "$CONFIG_MULTI_INTERFACE" ]]; then
+            sed -i "s/MULTI_INTERFACE=\"yes\"/MULTI_INTERFACE=\"$CONFIG_MULTI_INTERFACE\"/" awacs.sh
+        fi
+    fi
+    
+    step=$((step + 1))
+    show_progress $step $total_steps "Finalizing configuration"
+    
+    # Make sure the script is executable and properly formatted
+    chmod +x awacs.sh
     
     step=$((step + 1))
     show_progress $step $total_steps "Installing files"
@@ -1320,12 +1370,15 @@ show_installation_summary() {
         
     elif [[ "$INSTALL_LANGUAGE" == "en" ]]; then
         print_section "🎉 Installation Successful!"
-        echo -e "${GREEN}${BOLD}AWACS has been successfully installed with your configuration${NC}"
+        echo -e "${GREEN}${BOLD}AWACS has been successfully installed with your custom configuration${NC}"
         echo ""
         
         echo -e "${CYAN}${BOLD}Installation Information:${NC}"
         print_current "Installation Directory" "$INSTALL_DIR"
         print_current "Global Command" "awacs"
+        print_current "Language Setting" "$CONFIG_LANGUAGE"
+        print_current "Performance Mode" "$CONFIG_SPEED_MODE"
+        print_current "Logging Mode" "$CONFIG_LOG_MODE"
         if [[ "$CONFIG_CREATE_SERVICE" == "yes" ]]; then
             print_current "System Service" "awacs"
             print_current "Service Status" "$(systemctl is-active awacs 2>/dev/null || echo 'stopped')"
@@ -1354,12 +1407,15 @@ show_installation_summary() {
         
     else
         print_section "🎉 Installation Successful! | تم التثبيت بنجاح!"
-        echo -e "${GREEN}${BOLD}AWACS installed successfully | تم تثبيت أواكس بنجاح${NC}"
+        echo -e "${GREEN}${BOLD}AWACS installed with custom configuration | تم تثبيت أواكس مع تكوين مخصص${NC}"
         echo ""
         
         echo -e "${CYAN}${BOLD}Installation Info | معلومات التثبيت:${NC}"
         print_current "Directory | المجلد" "$INSTALL_DIR"
         print_current "Command | الأمر" "awacs"
+        print_current "Language | اللغة" "$CONFIG_LANGUAGE"
+        print_current "Performance | الأداء" "$CONFIG_SPEED_MODE"
+        print_current "Logging | التسجيل" "$CONFIG_LOG_MODE"
         if [[ "$CONFIG_CREATE_SERVICE" == "yes" ]]; then
             print_current "Service | الخدمة" "awacs"
             print_current "Status | الحالة" "$(systemctl is-active awacs 2>/dev/null || echo 'stopped | متوقفة')"
@@ -1387,6 +1443,10 @@ show_installation_summary() {
         echo -e "${GREEN}${BOLD}🛡️ أواكس: مراقبة دائمة، اتصال مستمر 🛡️${NC}"
     fi
     
+    echo ""
+    echo -e "${PURPLE}${BOLD}📝 Configuration Note | ملاحظة التكوين:${NC}"
+    echo -e "${WHITE}Your AWACS script has been customized with your settings.${NC}"
+    echo -e "${WHITE}تم تخصيص سكريبت أواكس مع إعداداتك المخصصة.${NC}"
     echo ""
     echo -e "${PURPLE}${BOLD}GitHub: ${CYAN}$GITHUB_REPO${NC}"
     echo -e "${PURPLE}${BOLD}Created by NetStorm - AbuNaif from Kuwait 🇰🇼${NC}"
