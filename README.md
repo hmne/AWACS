@@ -108,9 +108,9 @@
 
 | Mode | Recovery Time | Resource Usage | Best For |
 |:----:|:-------------:|:--------------:|:--------:|
-| 🏎️ **Performance** | 60 seconds | High | Gaming, Streaming |
+| 🏎️ **Fast** | 60 seconds | High | Gaming, Streaming |
 | ⚖️ **Balanced** | 90 seconds | Medium | Daily Use (Default) |
-| 🛡️ **Stability** | 155 seconds | Low | Critical Systems |
+| 🛡️ **Conservative** | 155 seconds | Low | Critical Systems |
 
 </div>
 
@@ -145,11 +145,123 @@
 
 <div align="center">
 
-### 🎯 **One-Line Installation**
+### 🎯 **Interactive Installer**
 
 ```bash
 curl -fsSL https://github.com/hmne/awacs/raw/main/install.sh | sudo bash
 ```
+
+**The installer offers two setup modes | المثبت يوفر وضعين للإعداد:**
+
+📚 **For detailed explanation of every option, see [WIKI.md](WIKI.md)**  
+📚 **للشرح المفصل لكل خيار، راجع [WIKI.md](WIKI.md)**
+
+</div>
+
+<details>
+<summary>🚀 <strong>Simple Setup (Quick Install) | الإعداد البسيط (تثبيت سريع)</strong></summary>
+
+### 🎯 **What it does | ما يفعله**
+
+The simple setup applies optimal default settings for most users:
+
+الإعداد البسيط يطبق الإعدادات الافتراضية المثلى لمعظم المستخدمين:
+
+- **Language | اللغة**: Bilingual (English + Arabic) | ثنائي اللغة
+- **Performance | الأداء**: Balanced mode (90 seconds recovery) | وضع متوازن
+- **Logging | التسجيل**: Local files only | ملفات محلية فقط
+- **Directory | المجلد**: `awacs/` beside script | جانب السكريبت
+- **Auto Connect | الاتصال التلقائي**: Disabled for open networks | معطل للشبكات المفتوحة
+- **System Service | خدمة النظام**: Created automatically | إنشاء تلقائي
+
+### ✅ **Best for | الأفضل لـ**
+- Home users | المستخدمين المنزليين
+- First-time installation | التثبيت لأول مرة
+- Quick deployment | النشر السريع
+- Default reliable operation | التشغيل الموثوق الافتراضي
+
+### 📝 **Example | مثال**
+```bash
+# User selects "1" for Simple Setup
+# المستخدم يختار "1" للإعداد البسيط
+# → Installs with proven defaults
+# → يثبت مع الإعدادات المجربة
+# → Ready to use immediately
+# → جاهز للاستخدام فوراً
+```
+
+</details>
+
+<details>
+<summary>🔧 <strong>Advanced Setup (Full Customization) | الإعداد المتقدم (تخصيص كامل)</strong></summary>
+
+### 🎛️ **What it configures | ما يقوم بتكوينه**
+
+The advanced setup walks through ALL configurable options:
+
+الإعداد المتقدم يمر عبر جميع الخيارات القابلة للتخصيص:
+
+#### 🌍 **1. Language Configuration | تكوين اللغة**
+- **English Only**: Interface and logs in English
+- **Arabic Only**: واجهة وسجلات باللغة العربية
+- **Bilingual**: Both languages (recommended) | كلا اللغتين
+
+#### ⚡ **2. Performance Mode | وضع الأداء**
+- **Fast (60s)**: High performance, gaming/streaming
+- **Balanced (90s)**: Optimal for daily use (default)
+- **Conservative (155s)**: Maximum stability, critical systems
+
+#### 📊 **3. Logging Configuration | تكوين التسجيل**
+- **Local Only**: Save logs beside script
+- **Remote Only**: Send to configured server
+- **Both**: Local + Remote logging
+- **None**: Disable logging (not recommended)
+
+#### 📁 **4. Directory Customization | تخصيص المجلدات**
+- **Default**: Use `awacs/` beside script
+- **Custom**: Specify custom paths for work, logs, temp, config
+
+#### 🔧 **5. Device Configuration | تكوين الجهاز**
+- **Device ID**: Unique identifier (e.g., AWACS-RaspberryPi-01)
+- **Device Name**: Human-readable name
+- **Remote URL**: Server for remote logging
+
+#### 🌐 **6. Network Options | خيارات الشبكة**
+- **Auto-connect to open networks**: Yes/No
+- **Connect to hidden networks**: Yes/No  
+- **Night mode**: Reduced activity 11 PM - 6 AM
+- **Stealth mode**: Minimal logging and activity
+
+#### 🔄 **7. System Service | خدمة النظام**
+- **Create systemd service**: Auto-start on boot
+- **Start service now**: Begin monitoring immediately
+
+### ✅ **Best for | الأفضل لـ**
+- Enterprise deployments | النشر المؤسسي
+- Custom requirements | المتطلبات المخصصة
+- Remote monitoring | المراقبة البعيدة
+- Specific performance needs | احتياجات الأداء المحددة
+
+### 📝 **Example | مثال**
+```bash
+# Advanced setup walk-through:
+# خطوات الإعداد المتقدم:
+
+Language → Arabic Only
+Performance → Fast (60s) for gaming
+Logging → Remote to monitoring server
+Directory → Custom: /opt/awacs-production
+Device ID → AWACS-Gaming-Rig-Main
+Network → Auto-connect: Yes, Hidden: Yes
+Service → Create and start immediately
+
+# Result: Fully customized installation
+# النتيجة: تثبيت مخصص بالكامل
+```
+
+</details>
+
+<div align="center">
 
 ### 🔧 **Manual Installation**
 
@@ -199,14 +311,14 @@ sudo ./awacs.sh
 </div>
 
 ```bash
-# 🏎️ High Performance Mode - للألعاب والبث
+# 🏎️ Fast Mode - للألعاب والبث
 sudo ./awacs.sh --performance --lang-both --verbose
 
 # ⚖️ Balanced Mode - للاستخدام اليومي (افتراضي)
 sudo ./awacs.sh --balanced --lang-both --log-local
 
-# 🛡️ Maximum Stability - للأنظمة الحيوية
-sudo ./awacs.sh --stability --lang-ar --daemon --quiet
+# 🛡️ Conservative Mode - للأنظمة الحيوية
+sudo ./awacs.sh --conservative --lang-ar --daemon --quiet
 ```
 
 <div align="center">
@@ -220,7 +332,7 @@ sudo ./awacs.sh --stability --lang-ar --daemon --quiet
 sudo ./awacs.sh --lang-en --performance
 
 # Arabic Interface Only - واجهة عربية فقط
-sudo ./awacs.sh --lang-ar --stability
+sudo ./awacs.sh --lang-ar --conservative
 
 # Bilingual Mode - الوضع ثنائي اللغة (Default)
 sudo ./awacs.sh --lang-both --balanced
@@ -245,6 +357,65 @@ sudo ./awacs.sh --log-both
 # Stealth Mode (No Logging)
 sudo ./awacs.sh --log-none --quiet
 ```
+
+---
+
+## 🎮 **Installation Examples** | **أمثلة التثبيت**
+
+<details>
+<summary>📱 <strong>Interactive Installer Screenshots | لقطات شاشة للمثبت التفاعلي</strong></summary>
+
+### 🌍 **Language Selection | اختيار اللغة**
+```
+🌍 Language Selection | اختيار اللغة
+
+Choose your preferred language for the installer
+اختر لغتك المفضلة للمثبت
+
+[1] English
+     Full English interface and messages
+[2] العربية  
+     واجهة وأرائل باللغة العربية بالكامل
+[3] Bilingual | ثنائي اللغة
+     Both languages (recommended)
+
+Default: 3 (Bilingual) - Press Enter for default
+Select option number: ►
+```
+
+### 🛠️ **Setup Mode Selection | اختيار وضع الإعداد**
+```
+🛠️ Setup Mode | وضع الإعداد
+
+Choose your preferred setup level | اختر مستوى الإعداد المطلوب
+
+[1] Simple Setup | إعداد بسيط
+     Quick setup with optimal defaults | إعداد سريع مع الخيارات المثلى
+[2] Advanced Setup | إعداد متقدم
+     Full customization | تخصيص كامل لجميع الخيارات
+
+Default: 1 (Simple) | الافتراضي: 1 (بسيط) - Press Enter | اضغط Enter
+Select option number: ►
+```
+
+### ⚡ **Performance Configuration (Advanced Mode) | إعداد الأداء (الوضع المتقدم)**
+```
+⚡ Performance Configuration | إعداد الأداء
+
+Choose performance mode | اختر وضع الأداء
+
+[1] Fast | سريع (60s)
+     High performance | أداء عالي - Gaming/streaming | ألعاب/بث
+[2] Balanced | متوازن (90s)  
+     Optimal balance | توازن مثالي (Recommended | مستحسن)
+[3] Stable | مستقر (155s)
+     Maximum stability | أقصى استقرار - Critical systems | أنظمة حيوية
+
+Default: 2 (Balanced) | الافتراضي: 2 (متوازن) - Press Enter | اضغط Enter
+Select option number: ►
+```
+
+</details>
 
 ---
 
@@ -278,8 +449,6 @@ DEVICE_NAME="AWACS WiFi Manager"   # Human-readable device name
 # PERFORMANCE TUNING | ضبط الأداء
 # ============================================
 SPEED_MODE="balanced"              # "fast" | "balanced" | "conservative"
-CHECK_INTERVAL=4                   # Seconds between connectivity checks
-SCAN_INTERVAL=20                   # Seconds between network scans
 
 # ============================================
 # DIRECTORY CUSTOMIZATION | تخصيص المجلدات
@@ -291,7 +460,7 @@ CUSTOM_LOG_DIR=""                  # Custom log directory (optional)
 # ============================================
 # NETWORK PREFERENCES | تفضيلات الشبكة  
 # ============================================
-AUTO_CONNECT_OPEN="yes"            # Connect to open networks
+AUTO_CONNECT_OPEN="no"             # Connect to open networks (disabled by default)
 CONNECT_HIDDEN="yes"               # Search for hidden networks
 PREFERRED_NETWORKS=("MyHome" "MyOffice")  # Priority network list
 ```
@@ -305,11 +474,11 @@ AWACS creates a self-contained, organized directory structure:
 
 ```
 📁 awacs/
-├── 🚀 awacs.sh                   # Main script (3,200+ lines, 126KB)
+├── 🚀 awacs.sh                   # Main script (3,189+ lines, 132KB)
 ├── 📖 README.md                  # This beautiful documentation
 ├── 📜 LICENSE                    # MIT License  
 ├── 📝 CHANGELOG.md               # Detailed version history
-├── 🔧 install.sh                 # Automated installer (Real!)
+├── 🔧 install.sh                 # Interactive installer (1,427+ lines)
 ├── 📋 CUSTOM_PATHS_GUIDE.md      # Custom paths configuration guide
 ├── 📁 awacs/                     # Created automatically (configurable name)
 │   ├── 📁 logs/
@@ -355,7 +524,7 @@ sudo ./awacs.sh --balanced --lang-both --log-local --verbose
 
 ```bash
 # Corporate network with high security requirements
-sudo ./awacs.sh --stability --lang-en --log-both --daemon
+sudo ./awacs.sh --conservative --lang-en --log-both --daemon
 ```
 
 <div align="center">
@@ -377,7 +546,7 @@ sudo ./awacs.sh --performance --lang-en --log-none --verbose
 
 ```bash
 # Critical infrastructure with maximum reliability
-sudo ./awacs.sh --stability --lang-ar --daemon --quiet
+sudo ./awacs.sh --conservative --lang-ar --daemon --quiet
 ```
 
 <div align="center">
@@ -397,13 +566,13 @@ sudo ./awacs.sh --performance --lang-both --log-remote
 
 <div align="center">
 
-| Metric | Fast Mode | Balanced Mode | Stability Mode |
+| Metric | Fast Mode | Balanced Mode | Conservative Mode |
 |:------:|:---------:|:-------------:|:--------------:|
 | **Recovery Time** | ⚡ 60s | ⚖️ 90s | 🛡️ 155s |
 | **Resource Usage** | 🔥 High | 💚 Medium | 🌿 Low |
 | **Power Consumption** | 🔋 High | 🔋 Medium | 🔋 Minimal |
-| **Scan Frequency** | 📡 Every 10s | 📡 Every 20s | 📡 Every 30s |
-| **Connection Attempts** | 🔄 Aggressive | 🔄 Moderate | 🔄 Conservative |
+| **Network Scanning** | 📡 Aggressive | 📡 Moderate | 📡 Conservative |
+| **Connection Strategy** | 🔄 Fast retries | 🔄 Balanced | 🔄 Patient approach |
 
 </div>
 
@@ -483,16 +652,18 @@ sudo ./awacs.sh --enable-remote-emergency
 
 ---
 
-## 🎓 **Tutorials & Guides** | **دروس وأدلة**
+## 📚 **Documentation** | **الوثائق**
 
 <div align="center">
 
-| Tutorial | English | العربية | Difficulty |
-|:--------:|:-------:|:--------:|:----------:|
-| **Basic Setup** | [📖 Guide](docs/tutorials/basic-setup-en.md) | [📖 دليل](docs/tutorials/basic-setup-ar.md) | 🟢 Beginner |
-| **Advanced Config** | [📖 Guide](docs/tutorials/advanced-config-en.md) | [📖 دليل](docs/tutorials/advanced-config-ar.md) | 🟡 Intermediate |
-| **Enterprise Deploy** | [📖 Guide](docs/tutorials/enterprise-en.md) | [📖 دليل](docs/tutorials/enterprise-ar.md) | 🔴 Advanced |
-| **Troubleshooting** | [📖 Guide](docs/troubleshooting/common-issues-en.md) | [📖 دليل](docs/troubleshooting/common-issues-ar.md) | 🟡 Intermediate |
+### 🎯 **Available Guides | الأدلة المتاحة**
+
+| Document | Description | اللغة |
+|:--------:|:-----------:|:-----:|
+| **📖 WIKI.md** | Complete detailed guide for every option | **الدليل الشامل المفصل لكل خيار** |
+| **🚀 INSTALLATION_GUIDE.md** | Interactive vs Quick installation | **دليل التثبيت التفاعلي مقابل السريع** |
+| **📁 CUSTOM_PATHS_GUIDE.md** | Custom directory configuration | **دليل تخصيص مسارات المجلدات** |
+| **📝 CHANGELOG.md** | Version history and updates | **تاريخ الإصدارات والتحديثات** |
 
 </div>
 
@@ -504,14 +675,15 @@ sudo ./awacs.sh --enable-remote-emergency
 
 ### 💬 **Get Help** | **احصل على المساعدة**
 
-[![GitHub Issues](https://img.shields.io/badge/🐛%20Issues-Report%20Bugs-red?style=for-the-badge)](https://github.com/hmne/awacs/issues)
-[![GitHub Discussions](https://img.shields.io/badge/💬%20Discussions-Ask%20Questions-blue?style=for-the-badge)](https://github.com/hmne/awacs/discussions)
-[![Telegram](https://img.shields.io/badge/📱%20Telegram-@AWACSSupport-26A5E4?style=for-the-badge&logo=telegram)](https://t.me/AWACSSupport)
+- **🐛 Report Issues**: Use GitHub Issues for bug reports | **الإبلاغ عن الأخطاء**: استخدم GitHub Issues
+- **❓ Ask Questions**: Check WIKI.md first for detailed answers | **طرح الأسئلة**: راجع WIKI.md أولاً للإجابات المفصلة
+- **📖 Documentation**: All guides available in repository | **الوثائق**: جميع الأدلة متاحة في المستودع
 
 ### 🎯 **Contributing** | **المساهمة**
 
-[![Pull Requests](https://img.shields.io/badge/🔄%20Pull%20Requests-Welcome-green?style=for-the-badge)](https://github.com/hmne/awacs/pulls)
-[![Contributors](https://img.shields.io/badge/👥%20Contributors-Join%20Us-orange?style=for-the-badge)](https://github.com/hmne/awacs/graphs/contributors)
+- **🔄 Pull Requests**: Contributions welcome | **المساهمات مرحب بها**
+- **📝 Documentation**: Help improve guides | **ساعد في تحسين الأدلة**
+- **🧪 Testing**: Test in different environments | **اختبر في بيئات مختلفة**
 
 </div>
 
@@ -530,8 +702,7 @@ This project is open source and available under the [MIT License](LICENSE).
 **Location**: Kuwait City, Kuwait  
 **Inspiration**: Military AWACS aircraft precision and reliability
 
-[![GitHub Profile](https://img.shields.io/badge/👨‍💻%20GitHub-@hmne-181717?style=for-the-badge&logo=github)](https://github.com/hmne)
-[![Email](https://img.shields.io/badge/📧%20Contact-Via%20GitHub-blue?style=for-the-badge)](https://github.com/hmne)
+**Contact**: Available through GitHub repository | **التواصل**: متاح عبر مستودع GitHub
 
 </div>
 

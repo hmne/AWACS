@@ -40,9 +40,9 @@ CONFIG_CUSTOM_TEMP_DIR=""
 CONFIG_CUSTOM_CONFIG_DIR=""
 CONFIG_REMOTE_LOGGING="no"
 CONFIG_REMOTE_URL=""
-CONFIG_AUTO_CONNECT_OPEN="yes"
+CONFIG_AUTO_CONNECT_OPEN="no"
 CONFIG_CONNECT_HIDDEN="yes"
-CONFIG_NIGHT_MODE="yes"
+CONFIG_NIGHT_MODE="no"
 CONFIG_STEALTH_MODE="no"
 CONFIG_CREATE_SERVICE="yes"
 CONFIG_START_NOW="yes"
@@ -281,7 +281,7 @@ simple_setup() {
         print_current "وضع الأداء" "متوازن (90 ثانية)"
         print_current "التسجيل" "محلي فقط"
         print_current "مجلد الملفات" "awacs/ (جانب السكريبت)"
-        print_current "الاتصال التلقائي" "مفعل"
+        print_current "الاتصال التلقائي" "معطل للشبكات المفتوحة"
         print_current "إنشاء خدمة" "نعم"
         
         echo ""
@@ -296,7 +296,7 @@ simple_setup() {
         print_current "Performance" "Balanced (90 seconds)"
         print_current "Logging" "Local only"
         print_current "File Directory" "awacs/ (beside script)"
-        print_current "Auto Connect" "Enabled"
+        print_current "Auto Connect" "Disabled for open networks"
         print_current "Create Service" "Yes"
         
         echo ""
@@ -311,7 +311,7 @@ simple_setup() {
         print_current "Performance | الأداء" "Balanced | متوازن"
         print_current "Logging | التسجيل" "Local only | محلي فقط"
         print_current "Directory | المجلد" "awacs/ (beside script | جانب السكريبت)"
-        print_current "Auto Connect | الاتصال التلقائي" "Enabled | مفعل"
+        print_current "Auto Connect | الاتصال التلقائي" "Disabled for open | معطل للمفتوحة"
         print_current "Create Service | إنشاء خدمة" "Yes | نعم"
         
         echo ""
@@ -796,8 +796,8 @@ configure_network_options() {
         echo ""
         
         echo -e "${WHITE}${BOLD}Auto-connect to open networks:${NC}"
-        print_option "1" "Yes (Recommended)" "Automatically connect to available open networks"
-        print_option "2" "No" "Do not connect to open networks"
+        print_option "1" "Yes" "Automatically connect to available open networks"
+        print_option "2" "No (Recommended)" "Do not connect to open networks"
         echo -n -e "${YELLOW}► ${NC}"
         read -r auto_connect
         
@@ -808,8 +808,8 @@ configure_network_options() {
         read -r hidden_networks
         
         echo -e "${WHITE}${BOLD}Night mode (power saving):${NC}"
-        print_option "1" "Yes (Recommended)" "Reduce power consumption during night hours"
-        print_option "2" "No" "Normal operation all day"
+        print_option "1" "Yes" "Reduce power consumption during night hours"
+        print_option "2" "No (Recommended)" "Normal operation all day"
         echo -n -e "${YELLOW}► ${NC}"
         read -r night_mode
         
@@ -819,8 +819,8 @@ configure_network_options() {
         echo ""
         
         echo -e "${WHITE}${BOLD}Auto-connect to open networks | الاتصال التلقائي بالشبكات المفتوحة:${NC}"
-        print_option "1" "Yes | نعم" "(Recommended | مستحسن)"
-        print_option "2" "No | لا" "Skip open networks | تجاهل الشبكات المفتوحة"
+        print_option "1" "Yes | نعم" "Connect to open networks | اتصال بالشبكات المفتوحة"
+        print_option "2" "No | لا" "Skip open networks | تجاهل الشبكات المفتوحة (Recommended | مستحسن)"
         echo -n -e "${YELLOW}► ${NC}"
         read -r auto_connect
         
@@ -831,8 +831,8 @@ configure_network_options() {
         read -r hidden_networks
         
         echo -e "${WHITE}${BOLD}Night mode | وضع الليل:${NC}"
-        print_option "1" "Yes | نعم" "Power saving | توفير طاقة (Recommended | مستحسن)"
-        print_option "2" "No | لا" "Normal operation | تشغيل عادي"
+        print_option "1" "Yes | نعم" "Power saving | توفير طاقة"
+        print_option "2" "No | لا" "Normal operation | تشغيل عادي (Recommended | مستحسن)"
         echo -n -e "${YELLOW}► ${NC}"
         read -r night_mode
     fi
@@ -1471,18 +1471,56 @@ show_installation_summary() {
 # ===============================================
 
 main() {
-    # Force interactive terminal
-    exec < /dev/tty
-    
-    # Interactive setup first (doesn't need root)
-    select_language
-    select_setup_mode
+    # Check if running from pipe (curl | bash)
+    if [[ ! -t 0 ]]; then
+        # Running from pipe - offer to download and run interactively
+        show_animated_header
+        echo -e "${YELLOW}${BOLD}⚠️  Non-interactive mode detected | تم اكتشاف وضع غير تفاعلي${NC}"
+        echo ""
+        echo -e "${WHITE}This installer is interactive and needs user input.${NC}"
+        echo -e "${WHITE}هذا المثبت تفاعلي ويحتاج إدخال من المستخدم.${NC}"
+        echo ""
+        echo -e "${CYAN}${BOLD}Option 1 - Download and run interactively | الخيار 1 - تحميل وتشغيل تفاعلي:${NC}"
+        echo -e "${WHITE}wget https://github.com/hmne/awacs/raw/main/install.sh${NC}"
+        echo -e "${WHITE}chmod +x install.sh${NC}"
+        echo -e "${WHITE}sudo ./install.sh${NC}"
+        echo ""
+        echo -e "${CYAN}${BOLD}Option 2 - Use default settings | الخيار 2 - استخدام الإعدادات الافتراضية:${NC}"
+        echo -e "${WHITE}Continue with safe defaults (no open networks, no night mode)${NC}"
+        echo -e "${WHITE}متابعة بالإعدادات الآمنة (بدون شبكات مفتوحة، بدون وضع ليلي)${NC}"
+        echo ""
+        echo -e "${PURPLE}${BOLD}Press Enter to continue with defaults, or Ctrl+C to exit${NC}"
+        echo -e "${PURPLE}${BOLD}اضغط Enter للمتابعة بالافتراضي، أو Ctrl+C للخروج${NC}"
+        
+        # Give user 10 seconds to decide
+        echo -n -e "${YELLOW}Continuing in 10 seconds... ${NC}"
+        for i in {10..1}; do
+            echo -n "$i "
+            sleep 1
+        done
+        echo ""
+        
+        # Use default settings
+        INSTALL_LANGUAGE="both"
+        SETUP_MODE="simple"
+        echo -e "${GREEN}✓ Using default settings | استخدام الإعدادات الافتراضية${NC}"
+    else
+        # Interactive mode
+        exec < /dev/tty
+        select_language
+        select_setup_mode
+    fi
     
     # Check root privileges after user input
     check_root
     
     if [[ "$SETUP_MODE" == "simple" ]]; then
-        simple_setup
+        if [[ ! -t 0 ]]; then
+            # Non-interactive: skip simple_setup, use defaults
+            echo -e "${GREEN}✓ Applying default configuration | تطبيق التكوين الافتراضي${NC}"
+        else
+            simple_setup
+        fi
     else
         advanced_setup
     fi

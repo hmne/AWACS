@@ -246,11 +246,11 @@ PRE_SCAN_SLEEP=2
 # ========================================
 
 # Network Connection Features
-AUTO_CONNECT_OPEN="yes"
+AUTO_CONNECT_OPEN="no"
 CONNECT_HIDDEN="yes"
 
 # Night Mode Settings
-NIGHT_MODE="yes"
+NIGHT_MODE="no"
 NIGHT_START="22:00"
 NIGHT_END="06:00"
 NIGHT_CHECK_INTERVAL=15
