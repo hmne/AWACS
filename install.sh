@@ -4,7 +4,7 @@
 # Advanced WiFi Auto Connection System
 # ===================================================
 
-set -e  # Exit on any error
+# set -e removed to allow interactive input
 
 # Colors and visual effects | ألوان وتأثيرات بصرية
 RED='\033[0;31m'
@@ -144,7 +144,13 @@ wait_input() {
         echo -e "${PURPLE}${BOLD}Select option number: ${NC}"
     fi
     echo -n -e "${YELLOW}${BOLD}► ${NC}"
-    read -r USER_INPUT
+    
+    # Use timeout to prevent hanging
+    if ! read -r -t 300 USER_INPUT; then
+        echo ""
+        echo -e "${YELLOW}${BOLD}No input received, using default...${NC}"
+        USER_INPUT=""
+    fi
 }
 
 # ===============================================
@@ -1392,12 +1398,12 @@ show_installation_summary() {
 # ===============================================
 
 main() {
-    # Check root privileges
-    check_root
-    
-    # Interactive setup
+    # Interactive setup first (doesn't need root)
     select_language
     select_setup_mode
+    
+    # Check root privileges after user input
+    check_root
     
     if [[ "$SETUP_MODE" == "simple" ]]; then
         simple_setup
