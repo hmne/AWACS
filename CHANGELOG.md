@@ -1,187 +1,45 @@
-# Changelog | سجل التغييرات
+# Changelog
 
-All notable changes to AWACS (Advanced WiFi Auto Connection System) are documented in this file.
+All notable changes to AWACS. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
-جميع التغييرات المهمة في أواكس (أنظمة واي فاي التلقائية كاملة السيطرة) موثقة في هذا الملف.
+## [1.0.0] — 2026-09-13
 
----
+First public release. Successor to the private `aasw.sh` line; every capability of the predecessor is kept, improved, or replaced by a documented alternative.
 
-## [1.0] - 2024-12-19 (Complete System Redesign | إعادة تصميم النظام الكامل)
+### Added
 
-### 🎉 New Features | ميزات جديدة
+- Dual backend in one file: `wpa` (dhcpcd + wpa_supplicant, driven through `wpa_cli`) and `nm` (NetworkManager, driven through `nmcli` as a supervisor that waits out NM's own retries). Detection at start with up to 60 s boot patience; monitor-only park when `nmcli` is missing or the interface is unmanaged, with exit-and-respawn once `nmcli` is installed.
+- Network choice by measured upload (`best_by_upload`), with a configurable gain a challenger must beat and a cooldown between evaluations. Passive kernel-counter meter for routine checks; probes only at decision moments.
+- Fight ladder: gentle reassociate, every visible stored network, three recovery rungs per backend (radio, network service, WiFi firmware), emergency networks with passwords (`SAFETY_NET`), open networks last.
+- ME-versus-external classification before any teardown; reboot valve armed only by the device's own wedge for `REBOOT_AFTER_MIN` minutes; wrong-password signature disarms it; on NM the valve arms only after NM has settled in disconnected/failed twice, or when NM itself is unreachable and its restart is spent.
+- No-block law: no `save_config`, no `disable_network`, no `nmcli connection modify`, no `nmcli device wifi connect`; temporary networks live only in the live supplicant or as `/run` keyfiles and are reaped by the next daemon; all stored networks re-enabled at every fight start, win, loss and shutdown.
+- Preferred-network return every `PREF_CHECK` after two consecutive sightings, measured on arrival, with a three-cooldown bench for a slow preferred network.
+- Day/night profile (`NIGHT_*`), live-stream awareness (`STREAM_MIN_KBPS`), optional stealth mode.
+- Bilingual logging: English local file with rotation, Arabic site lines, offline spool with a pinned first line, ordered delivery after recovery.
+- WiFi cell for a dashboard: `kbps,visible,total,band,SSID` every ~60 s.
+- Once-per-boot background install of missing tools with correct Debian package names.
+- Toolbox words: `status`, `networks`, `evaluate`, `scan`, `speed`, `check`, `help`; `check` and `help` need no root. Compat flags `-d`, `-q`.
+- Isolated conf `/etc/awacs.conf`: root-only 0600 enforced, plain assignments only, every numeric knob validated with fallback to defaults.
+- Public-edition knobs: `SITE_URL`, `LOG_TARGET`, `PROBE_URL`, `REPORT_WIFI`, `SITE_TZ`; `DEVICE_ID` from the environment (fallback: hostname). Local-only operation when no site is configured: "signal mode" — connectivity supervision without upload QA, dance or veto; the start line reports the applied knobs (`reporting: … | probe: … | wifi cell: …`).
+- Arabic and other non-ASCII SSIDs: raw-text matching on wpa, lowercase-hex matching on NM, decoded display everywhere.
+- Real-stack lab under QEMU with `mac80211_hwsim` radios, hostapd, dnsmasq, dhcpcd/wpa_supplicant and NetworkManager (`lab/`), 22 scenarios, byte-level no-block proofs.
+- Setup wizard `install.sh` (whiptail or plain prompts, English/Arabic, unattended `--yes`, `--dry-run`, `--uninstall [--purge]`), the systemd unit `systemd/awacs.service`, two self-hosted receivers (`server/receiver.php`, `server/receiver.py`), a read-only terminal dashboard (`tools/awacs-tui.sh`) and a knob-table generator (`tools/gen-config-table.sh`).
 
-**Complete Rebranding to AWACS | إعادة تسمية كاملة إلى أواكس**
-- Evolved from AWAS to AWACS with military-inspired naming
-- **A**dvanced **W**iFi **A**uto **C**onnection **S**ystem
-- **أ**نظمة **و**اي **ا**لتلقائية **ك**املة الـ**س**يطرة
-- Professional ASCII logo and branding
+### Fixed
 
-**Multi-Language Support | دعم متعدد اللغات**
-- Full English interface and logging support
-- Complete Arabic interface and logging support  
-- Bilingual operation mode with combined language output
-- User-selectable language preferences via command line
-- Smart translation (meaningful, not literal)
+- 2026-09-12 — `iw dev … scan` answers `Device or resource busy` whenever the supplicant or NetworkManager is mid-scan, which is exactly when AWACS scans most (77 of 107 legacy daemon scans and 17 of 25 NM scans in the lab fell back to a stale cache; the toolbox words `evaluate` and `scan` printed an empty air and `speed` failed). `scan()` now waits once on busy and reads the backend's own table through the new `scan_backend()` (wpa `scan_results`; NM `device wifi list --rescan no` with percent converted back to dBm and hex back to `iw`'s escaped text). Order: `iw` → `iwlist` → backend table. After the fix every toolbox word passed on both images (16/16, 17/17) and scans succeed on the first try.
+- 2026-09-13 — On NetworkManager, recovery rung L1 fired five seconds after NM's own autoconnect had already activated the home network (the ME evidence takes ~12 s to gather and the rung ran unconditionally). `fight()` now re-checks NM at every rung boundary: `nm_wait_settled`, credit `have_net`, and a device NM reports connected (state 100) without internet takes the router-side branch with no rung. Root-caused from NM's live journal (`lab/evidence/nm/11-INVESTIGATION.md`).
+- 2026-09-13 — Rung L1 on NM used `nmcli radio wifi off`, which soft-blocks every wireless radio on the box (a second dongle; in the lab, the access points themselves). It now blocks and unblocks only the interface's own rfkill index from `/sys/class/net/IF/phy80211/rfkill*`, keeping `nmcli radio` as the fallback for drivers without an rfkill node, then waits for NM to settle. With both 2026-09-13 fixes, a box killed on a temporary network came back online 25 s after the respawn's reap instead of 10–25 minutes.
+- 2026-09-13 — A radio that heard nothing (lab: the station moved to an empty `hwsim` group) hid behind a stale scan cache for 37 minutes on the NM image: `scan()` only ever replaced the cache with non-empty results, so the fight's "radio sees nothing" tell could not fire and the reboot valve never armed. `scan()` now counts consecutive fresh scans that heard nothing and drops the stale picture at the third (`radio heard nothing on 3 scans in a row - previous results dropped`); an empty fresh cache is served for `SCAN_TTL` like any other, and a failed scan refreshes the cache timestamp so the radio is asked once per `SCAN_TTL`, not once per caller.
+- 2026-09-13 — At the rung boundary on NM, a device back in the connecting band (40–90, 110) fell through to a recovery rung. It now gets the round-top treatment: `NM is still trying - waiting it out`, 20 s, next round.
+- 2026-09-13 — `systemctl stop` (a cgroup SIGTERM) killed the shutdown handler before `enable_all` and the goodbye box (6 of 6 stops in the lab): the handler reset its trap, and systemd's second TERM landed inside it. The handler now ignores the signals for its own duration and exits 0.
+- 2026-09-13 — Signal mode: with no probe target `up_kbps` read 0, which made the preferred-network return veto home as `too slow (0 kbps)` and would have let a slow real flow trigger a dance with no measurement behind it. Upload QA and the arrival measurement now require a probe target; the story lines say `signal mode` instead of a number; `speed` says `no probe target (signal mode)`.
+- 2026-09-13 — The ROOT ACCESS box was one space short of the original on its `Run:` line.
 
-**Flexible Logging System | نظام تسجيل مرن**
-- Local-only logging option in script directory
-- Remote-only logging option to configurable server
-- Combined local and remote logging
-- Option to disable logging completely
-- Enhanced remote logging with timeout and error handling
+### Known limits
 
-**Local Directory Structure | هيكل المجلد المحلي**
-- Self-contained operation in script directory
-- Automatic creation of local `test/` directory
-- Organized subdirectories for logs, temp files, and config
-- No system-wide file pollution
-- Easy cleanup and complete portability
+- wpa backend only: open networks with non-ASCII names are skipped as last-resort candidates; stored names containing a literal backslash, double quote, tab, newline, escape byte or edge space never match visibility.
+- NM backend: a hidden owner profile must already carry `802-11-wireless.hidden=yes`; NM device state 20 (unavailable) never arms the reboot valve.
+- The lab is a Linux VM with `mac80211_hwsim`; the Raspberry Pi's `brcmfmac` driver, real wall-clock timings, captive portals, a real ISP and IPv6 were not exercised.
 
-**Enhanced Command Line Interface | واجهة سطر أوامر محسنة**
-- Performance mode options: `--performance`, `--balanced`, `--stability`
-- Language selection: `--lang-en`, `--lang-ar`, `--lang-both`
-- Logging control: `--log-local`, `--log-remote`, `--log-both`, `--log-none`
-- System options: `--daemon`, `--verbose`, `--quiet`
-- Comprehensive help system in user's preferred language
-
-**Professional Startup Experience | تجربة بدء احترافية**
-- Military-grade AWACS ASCII banner
-- System information display (device, language, mode, logging)
-- Creator attribution and GitHub links
-- Contextual startup messages
-
-### 🔧 Enhanced Configuration | تكوين محسن
-
-**User-Friendly Settings | إعدادات سهلة الاستخدام**
-- Clearly documented configuration variables
-- Logical grouping of related settings
-- Comprehensive comments in both languages
-- Examples and usage instructions in script header
-
-**Improved Security | أمان محسن**
-- Removed all sensitive/personal information
-- Configurable device IDs and names
-- Template URLs for remote configuration
-- No hardcoded personal paths or server references
-
-### 🚀 Performance Optimizations | تحسينات الأداء
-
-**Enhanced Logging Performance | أداء تسجيل محسن**
-- Intelligent log message formatting based on language preference
-- Reduced redundant string operations
-- Optimized remote logging with connection timeouts
-- Efficient local file operations
-
-**Improved Resource Management | إدارة موارد محسنة**
-- Local directory structure reduces system impact
-- Automatic cleanup of temporary files in controlled location
-- Reduced memory footprint for language processing
-- Optimized startup banner display logic
-
-### 🔒 Security and Stability | الأمان والاستقرار
-
-**Enhanced Error Handling | معالجة أخطاء محسنة**
-- Bilingual error messages based on user preference
-- Graceful degradation when remote logging fails
-- Improved signal handling and cleanup procedures
-- Better recovery from configuration errors
-
-**Input Validation | التحقق من صحة المدخلات**
-- Comprehensive command line argument validation
-- Language preference validation and fallback
-- Logging mode validation with safe defaults
-- Configuration file path validation
-
-### 📚 Documentation | التوثيق
-
-**Comprehensive README | ملف README شامل**
-- Bilingual documentation (English/Arabic)
-- Clear installation and usage instructions
-- Advanced configuration examples
-- System requirements and compatibility information
-- Professional presentation with badges and formatting
-
-**Code Documentation | توثيق الكود**
-- Bilingual inline comments throughout script
-- Clear variable naming and organization
-- Function documentation in both languages
-- Usage examples for complex features
-
----
-
-## [7.x.x] - Legacy Versions | الإصدارات التراثية
-
-### Previous AWAS Versions | إصدارات AWAS السابقة
-- Single-language operation (English only)
-- System-wide file installation
-- Fixed configuration parameters
-- Basic logging capabilities
-- Hardcoded device and server references
-
----
-
-## Migration Guide | دليل الهجرة
-
-### Upgrading from AWAS 7.x to AWACS 1.0 | الترقية من AWAS 7.x إلى أواكس 1.0
-
-**Breaking Changes | تغييرات جذرية**
-- Script name changed from `awas.sh` to `awacs.sh`
-- Configuration variable names updated
-- File paths now use local directory structure  
-- Command line arguments redesigned
-- Logging format modified for multilingual support
-
-**Migration Steps | خطوات الهجرة**
-1. **Backup existing configuration** | نسخ احتياطي للتكوين الموجود
-   ```bash
-   cp /var/log/awas.log ~/awas_backup.log
-   ```
-
-2. **Download AWACS 1.0** | تحميل أواكس 1.0
-   ```bash
-   git clone https://github.com/hmne/awacs.git
-   cd awacs
-   ```
-
-3. **Configure new system** | تكوين النظام الجديد
-   - Edit configuration variables in `awacs.sh`
-   - Set `DEVICE_ID`, `REMOTE_URL`, and language preferences
-   - Choose logging mode and performance settings
-
-4. **Test operation** | اختبار التشغيل
-   ```bash
-   sudo ./awacs.sh --help
-   sudo ./awacs.sh status
-   ```
-
-5. **Deploy in production** | النشر في الإنتاج
-   ```bash
-   sudo ./awacs.sh --balanced --lang-both --daemon
-   ```
-
-**Configuration Mapping | تطابق التكوين**
-```bash
-# AWAS 7.x → AWACS 1.0
-DEVICE_ID="CAM-1" → DEVICE_ID="AWACS-1"
-URL_PATH="cam1" → URL_PATH="awacs"
-/var/log/awas.log → test/logs/awacs.log
-/tmp/awas_temp → test/temp
-```
-
----
-
-## Support | الدعم
-
-For support and bug reports, please visit:
-للدعم والإبلاغ عن الأخطاء، يرجى زيارة:
-
-- **GitHub Issues**: https://github.com/hmne/awacs/issues
-- **Created by**: NetStorm - AbuNaif (محمد المطيري) from Kuwait 🇰🇼
-- **Documentation**: See README.md
-- **Email**: Contact through GitHub profile
-
----
-
-**Release Notes | ملاحظات الإصدار**: Version 1.0 represents a complete architectural redesign focused on user experience, internationalization, and operational flexibility. This release prioritizes ease of deployment, configuration simplicity, and bilingual support for diverse user environments.
-
-**ملاحظات الإصدار**: الإصدار 1.0 يمثل إعادة تصميم معماري شامل يركز على تجربة المستخدم والتدويل والمرونة التشغيلية. هذا الإصدار يعطي الأولوية لسهولة النشر وبساطة التكوين والدعم ثنائي اللغة لبيئات المستخدمين المتنوعة.
+[1.0.0]: https://github.com/hmne/AWACS/releases/tag/v1.0.0

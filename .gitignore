@@ -1,0 +1,17 @@
+# device settings: carries hotspot passwords, never committed
+awacs.conf
+
+# logs from test runs
+*.log
+
+# lab evidence (large, machine-specific)
+evidence/
+
+# data written by a locally run receiver
+server/data/
+server/log/
+server/tmp/
+
+# python bytecode
+__pycache__/
+*.pyc

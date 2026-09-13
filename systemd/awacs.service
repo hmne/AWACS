@@ -1,0 +1,33 @@
+# /etc/systemd/system/awacs.service — AWACS daemon.
+#
+# This unit is the rc.local contract written as a service:
+#     ( while :; do /usr/local/bin/awacs.sh; sleep 10; done ) >/dev/null 2>&1 &
+# Restart=always + RestartSec=10 is that loop. StartLimitIntervalSec=0 keeps systemd from
+# giving up after a burst of quick exits (the rc.local loop never gives up either).
+#
+# The daemon's job is to make the network work, so it must not wait for network-online:
+# it starts right after the early network setup (network-pre.target) and waits for
+# NetworkManager itself when that is the backend (up to about 60 s, inside awacs.sh).
+#
+# DEVICE_ID names the device on the reporting site. install.sh overrides the example
+# below in awacs.service.d/10-device-id.conf; edit that file, not this one. Without the
+# variable awacs.sh uses the short hostname.
+#
+# On stop, systemd sends SIGTERM to the daemon and its helpers; awacs.sh traps it,
+# hands the network layer back its full autonomy (enable_all) and exits 0.
+
+[Unit]
+Description=AWACS - WiFi autonomy daemon
+After=network-pre.target NetworkManager.service dhcpcd.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Environment=DEVICE_ID=device1
+ExecStart=/usr/local/bin/awacs.sh
+Restart=always
+RestartSec=10
+TimeoutStopSec=40
+
+[Install]
+WantedBy=multi-user.target

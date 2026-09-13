@@ -1,0 +1,213 @@
+# /etc/awacs.conf — AWACS settings (public edition)
+# ملف إعدادات AWACS — النسخة العامة
+#
+# Security rules / قواعد الأمان
+# 1. Owned by root, mode 0600 (nothing for group or others). awacs.sh refuses any
+#    other owner or mode and prints the reason instead of staying silent.
+#    ملك root وبصلاحية 0600 (لا شيء للمجموعة أو الآخرين). السكربت يرفض غير ذلك ويطبع السبب.
+# 2. Plain KEY=value lines only. No readonly, no declare, no commands, no $(...).
+#    سطور KEY=value فقط. لا readonly ولا declare ولا أوامر ولا تعويض $(...).
+# 3. Hotspot passwords live here and nowhere else. awacs.sh is a shared file.
+#    كلمات سر شبكات الطوارئ هنا فقط. ملف awacs.sh يُتشارك ولا يحمل أسراراً.
+# 4. Every number is checked at start: 1 to 9999999, never 0. A bad value falls back
+#    to the default. NIGHT_START and NIGHT_END must be HH:MM. RUN_DIR must be absolute.
+#    كل رقم يُفحص عند التشغيل: من 1 إلى 9999999 ولا يُقبل الصفر. القيمة الخاطئة تعود
+#    إلى الافتراضي. NIGHT_START وNIGHT_END بصيغة HH:MM، وRUN_DIR مسار مطلق.
+# 5. A line left commented out keeps the default written on it.
+#    السطر المتروك خلف # يبقي الافتراضي المكتوب فيه.
+#
+# Install / التثبيت
+#   sudo cp awacs.conf.example /etc/awacs.conf
+#   sudo chown root:root /etc/awacs.conf && sudo chmod 600 /etc/awacs.conf
+#   sudo nano /etc/awacs.conf
+#
+# The WiFi interface is not set here: awacs.sh detects it (connected > up > present);
+# the environment variable AWACS_IF overrides. DEVICE_ID is not set here either (see 1).
+# واجهة الواي فاي لا تُضبط هنا: السكربت يكتشفها، والمتغير AWACS_IF يفرض واحدة. وكذلك DEVICE_ID (انظر 1).
+
+# ===== 1. Reporting — where the device reports / إلى أين يرسل الجهاز ==============
+# SITE_URL=""
+#   EN: base URL of a reporting site. The script talks to ${SITE_URL}/${DEVICE_ID}/device_api.php.
+#       Empty = local-only operation.
+#   AR: العنوان الأساسي لموقع التقارير. يخاطب السكربت ${SITE_URL}/${DEVICE_ID}/device_api.php.
+#       فارغ = عمل محلي فقط.
+# LOG_TARGET="local"
+#   EN: local | both | remote. "both" and "remote" need SITE_URL. "remote" keeps only
+#       WARN and ERROR lines in the local file.
+#   AR: local أو both أو remote. الخياران both وremote يحتاجان SITE_URL. مع remote يبقى
+#       في الملف المحلي سطور WARN وERROR فقط.
+# PROBE_URL=""
+#   EN: target of the upload-speed probe (a POST body). Empty with SITE_URL set =
+#       ${SITE_URL}/${DEVICE_ID}/device_api.php. Empty without SITE_URL = no upload probes;
+#       networks are then chosen by signal order ("signal mode").
+#   AR: هدف قياس سرعة الرفع (جسم طلب POST). فارغ مع SITE_URL = device_api.php في الموقع.
+#       فارغ بلا SITE_URL = لا قياس للرفع، وتُختار الشبكات بترتيب الإشارة ("وضع الإشارة").
+# REPORT_WIFI="auto"
+#   EN: publish the WiFi cell (kbps,visible,total,band,SSID) to the site as tmp/wifi.tmp.
+#       auto = on when LOG_TARGET is both or remote and SITE_URL is set; yes = on whenever
+#       SITE_URL is set; no = never.
+#   AR: إرسال خانة الواي فاي (السرعة,المرئية,الكل,الحزمة,الاسم) إلى الموقع في tmp/wifi.tmp.
+#       auto = تعمل حين يكون LOG_TARGET هو both أو remote مع SITE_URL؛ yes = تعمل ما دام
+#       SITE_URL مضبوطاً؛ no = لا تعمل أبداً.
+# SITE_TZ=""
+#   EN: time zone stamped on the lines sent to the site (e.g. Europe/Berlin). Empty = the
+#       device's own zone. Letters, digits, / _ + - only, up to 64 characters; anything else
+#       is read as empty. The local log always uses the device's zone.
+#   AR: المنطقة الزمنية المختومة على السطور المرسلة إلى الموقع (مثل Europe/Berlin). فارغ =
+#       منطقة الجهاز نفسه. حروف وأرقام و / _ + - فقط، حتى 64 حرفاً؛ غير ذلك يُقرأ فارغاً.
+#       اللوق المحلي يستعمل منطقة الجهاز دائماً.
+#
+# DEVICE_ID is read from the daemon's environment, not from this file:
+#   rc.local:  export DEVICE_ID="device1"     (the line before awacs.sh is launched)
+#   systemd:   Environment=DEVICE_ID=device1  (in the unit or its drop-in)
+# Letters, digits, _ and - only, 1 to 32 characters. Unset or invalid: the first non-blank
+# line of /tmp/device_id, then the short hostname, then the word "device".
+# يُقرأ DEVICE_ID من بيئة الحارس لا من هذا الملف (rc.local أو Environment= في وحدة systemd).
+# حروف وأرقام و_ و- فقط، من 1 إلى 32 حرفاً. إن غاب أو كان خاطئاً: أول سطر غير فارغ من
+# /tmp/device_id، ثم اسم المضيف المختصر، ثم الكلمة "device".
+
+# ----- Shape A: local-only (the defaults; nothing to uncomment) ---------------------
+#   The log stays in LOG_FILE and nothing is sent. Signal mode: with no probe target the
+#   daemon supervises connectivity only - it fights when the internet is lost, the strongest
+#   visible stored network that delivers wins, and the upload evaluation stays off.
+#   السجل يبقى في LOG_FILE ولا يُرسل شيء. وضع الإشارة: بلا هدف للقياس يراقب الحارس الاتصال
+#   فقط - يقاتل عند انقطاع الإنترنت، وتفوز أقوى شبكة مخزنة ظاهرة تعطي إنترنت، وتقييم الرفع معطّل.
+# SITE_URL=""
+# LOG_TARGET="local"
+# PROBE_URL=""
+# REPORT_WIFI="auto"
+# SITE_TZ=""
+
+# ----- Shape B: self-hosted receiver / مستقبل تستضيفه أنت ---------------------------
+#   You host a small device_api.php that implements the device_api contract (see docs/).
+#   The device appends its log there, sends the WiFi cell, and measures upload against it.
+#   تستضيف ملف device_api.php صغيراً يطبق عقد device_api (انظر docs/). الجهاز يضيف سجله
+#   هناك ويرسل خانة الواي فاي ويقيس سرعة الرفع نحوه.
+# SITE_URL="https://receiver.example.net"
+# LOG_TARGET="both"
+# PROBE_URL=""
+# REPORT_WIFI="auto"
+# SITE_TZ=""
+
+# ----- Shape C: full site / موقع كامل -------------------------------------------------
+#   A site with a dashboard that reads log/log.txt and tmp/wifi.tmp. The local file keeps
+#   only warnings and errors; the full story lives on the site.
+#   موقع بلوحة تقرأ log/log.txt وtmp/wifi.tmp. الملف المحلي يحتفظ بالتحذيرات والأخطاء فقط.
+# SITE_URL="https://cam.example.net"
+# LOG_TARGET="remote"
+# PROBE_URL=""
+# REPORT_WIFI="yes"
+# SITE_TZ="Europe/Berlin"
+
+# ===== 2. Emergency networks with passwords / شبكات الطوارئ بكلمات سر ==============
+#   EN: tried after every stored network failed and before any open network. Attempted
+#       even when not seen in a scan (a phone hotspot may be hidden or just switched on).
+#       The connection is a temporary profile that is never saved to disk. Password: 8 to
+#       63 characters, or 64 hex digits. An empty password lists an OPEN network on purpose.
+#       On the wpa backend a name or password containing a backslash or a double quote
+#       is skipped.
+#   AR: تُجرَّب بعد فشل كل الشبكات المخزنة وقبل أي شبكة مفتوحة. تُجرَّب حتى إن لم تظهر في
+#       المسح (هوتسبوت الهاتف قد يكون مخفياً أو شُغّل للتو). الاتصال مؤقت ولا يُحفظ على
+#       القرص. كلمة السر من 8 إلى 63 حرفاً أو 64 رقماً ست عشرياً. الكلمة الفارغة تعني شبكة
+#       مفتوحة مقصودة. على نظام wpa يُتجاوز الاسم أو الكلمة التي تحوي \ أو ".
+# SAFETY_NET["MyPhoneHotspot"]="hotspot-password"
+# SAFETY_NET["Office Guest"]="another-password"
+# SAFETY_NET["OpenCafe"]=""
+
+# ===== 3. Rhythm (seconds and counts) / الإيقاع ======================================
+# TICK=10
+#   EN: main-loop period in seconds. Each tick costs one ping, never a download.
+#   AR: دورة الحلقة الرئيسية بالثواني. كل دورة تكلف أمر ping واحداً ولا تنزيل أبداً.
+# NET_FAIL_TICKS=3
+#   EN: ticks without internet before recovery starts (3 x 10 s = about 30 s).
+#   AR: عدد الدورات بلا إنترنت قبل بدء الإنعاش (3 × 10 ث = نحو 30 ثانية).
+# ASSOC_WAIT=25
+#   EN: seconds to wait for association and an IPv4 lease after a connect attempt.
+#   AR: ثوانٍ انتظار الارتباط وعنوان IPv4 بعد محاولة اتصال.
+# PREF_CHECK=600
+#   EN: seconds between looks for a visible stored network with a higher priority;
+#       two consecutive sightings send the device back to it.
+#   AR: ثوانٍ بين كل بحث عن شبكة مخزنة ظاهرة أعلى أولوية؛ ظهورها مرتين متتاليتين يعيد الجهاز إليها.
+# REBOOT_AFTER_MIN=30
+#   EN: minutes of a proven device-side wedge (a stored network is visible, association
+#       fails, the gateway is silent) before a reboot. Never for an ISP outage or a wrong
+#       password.
+#   AR: دقائق تعطّل مثبت من جهة الجهاز (شبكة مخزنة ظاهرة، والارتباط يفشل، والراوتر صامت)
+#       قبل الريبوت. لا ريبوت لانقطاع المزوّد ولا لكلمة سر خاطئة.
+
+# ===== 4. Upload-speed rules / قواعد سرعة الرفع =======================================
+# PROBE_KB=200
+#   EN: size of one upload probe in KB, sent at decision moments only.
+#   AR: حجم قياس الرفع الواحد بالكيلوبايت، يُرسل في لحظات القرار فقط.
+# MIN_UP_KBPS=400
+#   EN: day floor in kbps. Sustained slower upload while traffic flows starts an evaluation.
+#   AR: الحد الأدنى نهاراً بالكيلوبت/ث. رفع أبطأ منه باستمرار أثناء وجود حركة يبدأ تقييماً.
+# UP_STRIKES=3
+#   EN: consecutive slow samples before an evaluation is considered.
+#   AR: عدد العينات البطيئة المتتالية قبل النظر في تقييم.
+# SWITCH_GAIN_PCT=150
+#   EN: day rule: a challenger must upload at this percentage of the current network's
+#       measured speed to replace it (150 = one and a half times).
+#   AR: قاعدة النهار: على الشبكة المنافسة أن ترفع بهذه النسبة من سرعة الشبكة الحالية
+#       المقيسة لتحل محلها (150 = مرة ونصف).
+# DANCE_COOLDOWN=1200
+#   EN: day minimum in seconds between two evaluations. An evaluation interrupts traffic.
+#   AR: أقل فاصل نهاراً بالثواني بين تقييمين. التقييم يقطع الحركة الحقيقية.
+# STREAM_MIN_KBPS=50
+#   EN: while a live stream runs, its own rate is the meter; below this it is starving
+#       and an evaluation becomes allowed.
+#   AR: أثناء البث المباشر تكون سرعته هي المقياس؛ تحت هذا الحد يُعدّ البث متعطشاً ويُسمح بالتقييم.
+
+# ===== 5. Night profile / الوضع الليلي ==================================================
+# NIGHT_MODE="yes"
+#   EN: "yes" enables the night profile below; anything else disables it.
+#   AR: "yes" يفعّل الوضع الليلي أدناه؛ أي قيمة أخرى تعطله.
+# NIGHT_START="22:00"
+#   EN: night begins (HH:MM, 24-hour). The window may wrap past midnight.
+#   AR: بداية الليل (HH:MM بنظام 24 ساعة). يجوز أن تمتد الفترة عبر منتصف الليل.
+# NIGHT_END="06:00"
+#   EN: night ends (HH:MM, 24-hour).
+#   AR: نهاية الليل (HH:MM بنظام 24 ساعة).
+# NIGHT_MIN_UP_KBPS=200
+#   EN: night floor in kbps (replaces MIN_UP_KBPS at night).
+#   AR: الحد الأدنى ليلاً بالكيلوبت/ث (يحل محل MIN_UP_KBPS ليلاً).
+# NIGHT_GAIN_PCT=300
+#   EN: night challenger rule (replaces SWITCH_GAIN_PCT at night).
+#   AR: قاعدة المنافس ليلاً (تحل محل SWITCH_GAIN_PCT ليلاً).
+# NIGHT_DANCE_COOLDOWN=2400
+#   EN: night minimum between evaluations in seconds (replaces DANCE_COOLDOWN at night).
+#   AR: أقل فاصل بين التقييمات ليلاً بالثواني (يحل محل DANCE_COOLDOWN ليلاً).
+
+# ===== 6. Last resorts and behaviour / الملاجئ الأخيرة والسلوك ========================
+# OPEN_NETWORKS="yes"
+#   EN: open (passwordless) networks as the very last resort, on a temporary profile
+#       that is never saved to disk. Anything but "yes" disables this.
+#   AR: الشبكات المفتوحة (بلا كلمة سر) كملجأ أخير، عبر تعريف مؤقت لا يُحفظ على القرص.
+#       أي قيمة غير "yes" تعطل ذلك.
+# STEALTH_MODE="no"
+#   EN: "yes" drops incoming ping (ICMP echo) on the WiFi interface and stops avahi-daemon.
+#   AR: "yes" يمنع الرد على ping الوارد عبر واجهة الواي فاي ويوقف avahi-daemon.
+# DEBUG="yes"
+#   EN: DEBUG lines (decision trace) in the local log. "no" keeps the log to events only.
+#   AR: سطور DEBUG (تتبّع القرارات) في السجل المحلي. "no" يبقي السجل على الأحداث فقط.
+
+# ===== 7. Files / الملفات ================================================================
+# LOG_FILE=/var/log/awacs.log
+#   EN: the local log, created readable by root only.
+#   AR: السجل المحلي، يُنشأ مقروءاً للـ root فقط.
+# LOG_CAP=1500
+#   EN: lines kept after rotation (rotation runs once the file exceeds LOG_CAP + 200).
+#   AR: عدد السطور المحفوظة بعد التدوير (يبدأ التدوير حين يتجاوز الملف LOG_CAP + 200).
+# RUN_DIR=/run/awacs
+#   EN: private state directory (lock and pid, scan cache, spool, temporary-profile marker,
+#       probe file). Absolute path; created 0700 root.
+#   AR: مجلد الحالة الخاص (القفل وpid، كاش المسح، السبول، علامة التعريف المؤقت، ملف القياس).
+#       مسار مطلق؛ يُنشأ 0700 للـ root.
+# SCAN_TTL=30
+#   EN: seconds a radio scan result is reused before scanning again.
+#   AR: ثوانٍ إعادة استعمال نتيجة المسح قبل مسح جديد.
+# SPOOL_CAP=60
+#   EN: site-log lines kept while offline and delivered in order after recovery; the
+#       first line (the outage's opening stamp) is always kept.
+#   AR: عدد سطور سجل الموقع المحفوظة أثناء الانقطاع وتُسلَّم بالترتيب بعد العودة؛ السطر
+#       الأول (بداية الانقطاع) يبقى دائماً.

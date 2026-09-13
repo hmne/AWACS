@@ -1,0 +1,41 @@
+name: shellcheck
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: sudo apt-get update -q && sudo apt-get install -y -q shellcheck php-cli python3
+
+      - name: bash -n on every shell script
+        run: |
+          for f in $(git ls-files '*.sh'); do
+            bash -n "$f" && echo "bash -n ok: $f"
+          done
+
+      - name: shellcheck -x on every shell script
+        run: git ls-files -z '*.sh' | xargs -0 -r shellcheck -x
+
+      - name: LF line endings only
+        run: |
+          if git ls-files -z '*.sh' '*.py' '*.php' '*.service' '*.md' '*.yml' | xargs -0 grep -l $'\r'; then
+            echo "CRLF line endings found"
+            exit 1
+          fi
+
+      - name: Wizard strings complete in both languages
+        run: bash install.sh --selftest
+
+      - name: Embedded unit equals systemd/awacs.service
+        run: bash install.sh --print-unit | diff -u systemd/awacs.service -
+
+      - name: Receivers parse
+        run: |
+          php -l server/receiver.php
+          python3 -m py_compile server/receiver.py
