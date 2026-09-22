@@ -1,735 +1,153 @@
-<div align="center">
+# AWACS
 
-# 🛡️ AWACS - Advanced WiFi Auto Connection System
-# 🛡️ أواكس - أنظمة واي فاي التلقائية كاملة السيطرة
+AWACS (Advanced WiFi Auto Connection System) is one bash script, `awacs.sh`, that runs as a daemon and keeps a headless Linux device on the internet over WiFi. The device it is written for has nobody in front of it: a Raspberry Pi at a remote site, a sensor box, a kiosk. When the internet is lost, the daemon reconnects the device without anyone at the keyboard, and it does so without editing the stored network configuration of the system.
 
-<img src="https://readme-typing-svg.herokuapp.com?font=Orbitron&size=28&duration=3000&pause=1000&color=00D4FF&center=true&vCenter=true&multiline=true&width=800&height=100&lines=🚀+ALWAYS+WATCHING,+ALWAYS+CONNECTED+🚀;🛡️+مراقبة+دائمة،+اتصال+مستمر+🛡️" alt="AWACS Typing Animation" />
+[Arabic](README.ar.md) | [Documentation](docs/en/) | [Changelog](CHANGELOG.md)
 
-<p align="center">
-  <img src="https://img.shields.io/badge/version-1.0--ULTRA-00D4FF?style=for-the-badge&logo=wifi&logoColor=white" />
-  <img src="https://img.shields.io/badge/Platform-ARM%20%7C%20x86-FF6B6B?style=for-the-badge&logo=linux&logoColor=white" />
-  <img src="https://img.shields.io/badge/License-MIT-4ECDC4?style=for-the-badge&logo=opensource&logoColor=white" />
-  <img src="https://img.shields.io/badge/Language-Bash%205.0+-45B7D1?style=for-the-badge&logo=gnubash&logoColor=white" />
-</p>
+## Situations wpa_supplicant and NetworkManager do not handle
 
-<p align="center">
-  <img src="https://img.shields.io/badge/🌐%20English%20%7C%20Arabic-Bilingual-success?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/🇰🇼%20Made%20in%20Kuwait-with%20❤️-FF6B35?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/🏆%20Military%20Grade-Security-FFA726?style=for-the-badge" />
-</p>
+Both stacks join a stored network and keep the association alive. Neither checks whether the internet is reachable through it, neither compares networks by throughput, and neither distinguishes a fault on the device from a fault upstream. The situations below leave a headless device offline.
 
----
+A wrong password on the only network. The stack retries the same network; a watchdog that reboots on lost connectivity reboots in a loop. AWACS reads the refusal, logs `association refused - wrong password? (recovery continues, reboot stays off)`, continues with the other networks and the recovery rungs, and does not reboot for a credential fault.
 
-## 🎯 **What is AWACS?**
+The home access point goes down, then comes back. The stack stays on whatever it landed on. AWACS falls back to a working stored network (the fastest by measured upload when a probe target exists), then looks every `PREF_CHECK` seconds for a visible stored network of higher priority and returns to it after seeing it twice in a row.
 
-<table>
-<tr>
-<td width="50%">
+Every stored network is gone. The stack sits disconnected. AWACS joins an emergency network from `SAFETY_NET` (a phone hotspot with its password), and failing that an open network, through a temporary entry that is never written to disk. When a stored network is back, the temporary entry is removed.
 
-> **🇺🇸 English Version**  
-> **AWACS** stands for **Advanced WiFi Auto Connection System** - a cutting-edge network management solution inspired by military **A**irborne **W**arning **A**nd **C**ontrol **S**ystem aircraft that maintain constant surveillance of airspace.
-> 
-> Just as military AWACS provides continuous monitoring and control, our AWACS ensures uninterrupted WiFi connectivity through intelligent automation.
+The ISP is down while the router is up. The link is fine, so the stack sees nothing wrong; a connectivity watchdog reboots for nothing. AWACS pings the gateway, logs `outage looks external (round N) — waiting, not rebooting`, and waits.
 
-</td>
-<td width="50%">
+The fault is on the device. The driver or the supplicant is stuck while a stored network is visible. The stack retries forever. AWACS bounces the radio, restarts the network service, reloads the WiFi firmware, and reboots only when a stored network has stayed visible and unreachable for `REBOOT_AFTER_MIN` minutes (30 by default).
 
-> **🇸🇦 النسخة العربية**  
-> **أواكس** يعني **أنظمة واي فاي التلقائية كاملة السيطرة** - حل متطور لإدارة الشبكات مستوحى من طائرات **الإنذار المبكر والتحكم** العسكرية التي تحافظ على مراقبة مستمرة للمجال الجوي.
-> 
-> كما توفر طائرات الإنذار المبكر العسكرية المراقبة والتحكم المستمر، يضمن أواكس اتصال واي فاي متواصل.
+The link is slow while a faster stored network is available. The stack chooses by priority and signal and never measures speed. AWACS measures upload by POSTing `PROBE_KB` kilobytes to the site. After `UP_STRIKES` slow samples of real traffic it uploads through each visible stored network and switches only to one that reaches `SWITCH_GAIN_PCT` percent of the current network's measured speed.
 
-</td>
-</tr>
-</table>
+## How it works
 
----
+1. Every `TICK` seconds (10) the daemon checks the internet: a ping to 8.8.8.8, then to 1.1.1.1, then an HTTP 204 from connectivitycheck.gstatic.com, then, when a site is configured, an HTTP 400 from the site endpoint. One rung passing means online. A check that fails while the device is still sending is repeated once in a patient form (three pings per target, 8-second HTTP limits) before it counts as a failure, once per outage.
+2. After `NET_FAIL_TICKS` failed checks (3) it logs `internet lost on wlan0 - engaging` and starts recovery: 40 to 63 seconds after the loss on a link whose gateway has gone silent, about 72 to 83 seconds when the router keeps answering and one patient check is spent first. A device that boots without internet starts recovery at once.
+3. Recovery opens gently: every stored network is re-enabled, the network stack is asked to reconnect (`wpa_cli reassociate`, or `nmcli device connect` on a device NetworkManager reports disconnected or failed), and an IPv4 lease plus a passed internet check ends recovery. While the gateway still answers, the first recovery of an outage keeps the live association and skips that reconnect; the second one performs it.
+4. Otherwise three rounds follow. Each round tries every visible stored network, measured by upload when a probe target exists and in signal order otherwise.
+5. Before any teardown the outage is classified. Gateway silent, no lease this round, and a stored network visible (or a radio that hears nothing, or an empty stored list): the fault is on the device. Gateway answering: the outage is external and the daemon waits.
+6. On the device-side branch the round runs one recovery rung. L1 bounces the radio; L2 restarts dhcpcd on the wpa backend or reapplies and reconnects the device through nmcli on the nm backend; L3 reloads the brcmfmac firmware, after a NetworkManager restart on the nm backend.
+7. A round that has not restored the internet ends with the emergency networks from `SAFETY_NET`, then open networks, each on a temporary entry.
+8. A reboot happens only when the device-side evidence has persisted for `REBOOT_AFTER_MIN` minutes. A wrong-password sign resets that timer, and on NetworkManager images the timer runs only after NetworkManager has itself given up.
+9. The daemon never calls `save_config` or `disable_network`, never runs `nmcli connection modify`, `delete` or `down` on a stored profile, and never runs `nmcli device wifi connect`. Temporary entries live in the running supplicant or under `/run` and are removed by the next daemon start.
+10. With a site configured and `LOG_TARGET` set to `both` or `remote`, every event goes to the site; `both` keeps the full local log, `remote` keeps only `WARN` and `ERROR` lines in it. Lines that cannot be sent during an outage are spooled and delivered in order after recovery; the first spooled line is kept so the outage's start time survives.
 
-</div>
+On a NetworkManager image the daemon supervises NetworkManager. While NetworkManager reports the device in a transition (connecting or deactivating) it waits and logs `NM is still trying - waiting it out`. A device NetworkManager reports as connected while the internet is down gets no rung either; the log says `NetworkManager is connected, internet is not (round N) — router-side, no rung` and the round goes on to the emergency networks. A recovery rung runs only when NetworkManager reports the device disconnected, failed or unavailable, or when `nmcli` cannot read the state, and the reboot timer arms only after two disconnected or failed readings in a row. If `nmcli` is missing or the interface is unmanaged, the daemon monitors only and says so in the log.
 
-## 🚀 **Core Principles** | **المبادئ الأساسية**
+## Requirements
 
-<div align="center">
+Debian-family Linux: Raspberry Pi OS with dhcpcd and wpa_supplicant, Raspberry Pi OS Bookworm and other NetworkManager images, Debian derivatives with `apt`. bash 4 or later. The tools `iw`, `ip`, `ping`, `curl`, `awk`, `sed`, `grep`, `pgrep`, `rfkill`, `flock`, `timeout`, `stat`, `date`, `modprobe`, and `wpa_cli` or `nmcli`; all are stock on Raspberry Pi OS and Debian. `iwlist` and `wget` are optional fallbacks. The daemon runs as root. Nothing is installed on the device beyond these tools: a missing tool is reported in the log and installed once per boot in the background with `apt-get`; without `apt-get` the log names the missing tools.
 
-| 🔍 **Always Watching** | 🔗 **Always Connected** | ⚡ **Always Controlling** | 🛡️ **Always Stable** |
-|:---:|:---:|:---:|:---:|
-| **مراقبة دائمة** | **اتصال مستمر** | **تحكم دائم** | **استقرار دائم** |
-| Continuous network monitoring | Automatic optimal switching | Intelligent decision-making | Military-grade reliability |
-| مراقبة مستمرة للشبكة | تبديل تلقائي للأمثل | اتخاذ قرارات ذكية | موثوقية عسكرية |
+## Install
 
-</div>
+The wizard downloads `awacs.sh`, verifies it against `SHA256SUMS`, and asks for language, missing tools, device id (default: the short hostname), log target and site, emergency networks and boot method:
 
----
-
-## 🌟 **Revolutionary Features** | **ميزات ثورية**
-
-<details>
-<summary>🧠 <strong>Intelligent Network Management</strong> | <strong>إدارة الشبكات الذكية</strong></summary>
-
-### 🎯 **Smart Network Selection**
-- **🔍 AI-Powered Scanning**: Advanced algorithms analyze network quality, signal strength, and stability
-- **📊 Dynamic Scoring System**: Real-time evaluation of connection quality with predictive analytics
-- **🎯 Priority-Based Selection**: User-defined preferences with automatic fallback mechanisms
-- **🔄 Seamless Handover**: Zero-downtime transitions between networks
-
-### 🌐 **Advanced Protocol Support**
-- **📡 Multi-Band Optimization**: 2.4GHz and 5GHz band intelligence
-- **🔐 Enterprise Security**: WPA3, WPA2-Enterprise, and custom authentication
-- **🚫 Captive Portal Detection**: Automatic bypass and authentication
-- **🔍 Hidden Network Discovery**: Advanced SSID probing capabilities
-
-</details>
-
-<details>
-<summary>🌍 <strong>Multi-Language Excellence</strong> | <strong>التميز متعدد اللغات</strong></summary>
-
-### 🗣️ **Native Language Support**
-| Feature | English | العربية | Bilingual |
-|---------|:-------:|:--------:|:---------:|
-| **Interface** | ✅ Full | ✅ كامل | ✅ مدمج |
-| **Logging** | ✅ Complete | ✅ شامل | ✅ ثنائي |
-| **Help System** | ✅ Detailed | ✅ مفصل | ✅ متكامل |
-| **Error Messages** | ✅ Clear | ✅ واضح | ✅ مفهوم |
-
-### 🎨 **Smart Translation Engine**
-- **🧠 Contextual Translation**: Meaningful, not literal conversions
-- **📱 Dynamic Interface**: Language switching without restart
-- **📝 Intelligent Logging**: Automatic language detection and formatting
-- **🎯 Cultural Adaptation**: Region-specific terminology and conventions
-
-</details>
-
-<details>
-<summary>⚡ <strong>Performance Optimization</strong> | <strong>تحسين الأداء</strong></summary>
-
-### 🏃‍♂️ **Three Operating Modes**
-
-<div align="center">
-
-| Mode | Recovery Time | Resource Usage | Best For |
-|:----:|:-------------:|:--------------:|:--------:|
-| 🏎️ **Fast** | 60 seconds | High | Gaming, Streaming |
-| ⚖️ **Balanced** | 90 seconds | Medium | Daily Use (Default) |
-| 🛡️ **Conservative** | 155 seconds | Low | Critical Systems |
-
-</div>
-
-### 🔧 **Advanced Optimizations**
-- **🧠 Graceful Degradation**: Intelligent resource conservation during problems
-- **📊 Adaptive Scanning**: Dynamic frequency adjustment based on network stability
-- **🔄 Smart Recovery**: Multi-level failure detection and automatic recovery
-- **💾 Memory Optimization**: Efficient resource management for embedded systems
-
-</details>
-
-<details>
-<summary>🔐 <strong>Security & Reliability</strong> | <strong>الأمان والموثوقية</strong></summary>
-
-### 🛡️ **Military-Grade Security**
-- **🔒 Secure Lock Files**: Advanced PID validation and race condition prevention
-- **🌐 DNS Protection**: Validation and hijacking prevention
-- **🔐 Configuration Validation**: Comprehensive input sanitization
-- **🛠️ Hardware Recovery**: Intelligent driver management and interface switching
-
-### 🔧 **Fault Tolerance**
-- **🔄 Multi-Level Recovery**: Hardware, software, and network layer recovery
-- **📊 Health Monitoring**: Continuous system health assessment
-- **🚨 Emergency Modes**: Survival mode for extreme conditions
-- **📱 Remote Diagnostics**: Optional remote monitoring and management
-
-</details>
-
----
-
-## 🚀 **Lightning Fast Setup** | **إعداد سريع كالبرق**
-
-<div align="center">
-
-### 🎯 **Interactive Installer**
-
-```bash
-curl -fsSL https://github.com/hmne/awacs/raw/main/install.sh | sudo bash
+```sh
+curl -fsSL https://raw.githubusercontent.com/hmne/AWACS/main/install.sh | sudo bash
 ```
 
-**The installer offers two setup modes | المثبت يوفر وضعين للإعداد:**
+Unattended:
 
-📚 **For detailed explanation of every option, see [WIKI.md](WIKI.md)**  
-📚 **للشرح المفصل لكل خيار، راجع [WIKI.md](WIKI.md)**
-
-</div>
-
-<details>
-<summary>🚀 <strong>Simple Setup (Quick Install) | الإعداد البسيط (تثبيت سريع)</strong></summary>
-
-### 🎯 **What it does | ما يفعله**
-
-The simple setup applies optimal default settings for most users:
-
-الإعداد البسيط يطبق الإعدادات الافتراضية المثلى لمعظم المستخدمين:
-
-- **Language | اللغة**: Bilingual (English + Arabic) | ثنائي اللغة
-- **Performance | الأداء**: Balanced mode (90 seconds recovery) | وضع متوازن
-- **Logging | التسجيل**: Local files only | ملفات محلية فقط
-- **Directory | المجلد**: `awacs/` beside script | جانب السكريبت
-- **Auto Connect | الاتصال التلقائي**: Disabled for open networks | معطل للشبكات المفتوحة
-- **System Service | خدمة النظام**: Created automatically | إنشاء تلقائي
-
-### ✅ **Best for | الأفضل لـ**
-- Home users | المستخدمين المنزليين
-- First-time installation | التثبيت لأول مرة
-- Quick deployment | النشر السريع
-- Default reliable operation | التشغيل الموثوق الافتراضي
-
-### 📝 **Example | مثال**
-```bash
-# User selects "1" for Simple Setup
-# المستخدم يختار "1" للإعداد البسيط
-# → Installs with proven defaults
-# → يثبت مع الإعدادات المجربة
-# → Ready to use immediately
-# → جاهز للاستخدام فوراً
+```sh
+curl -fsSL https://raw.githubusercontent.com/hmne/AWACS/main/install.sh | sudo bash -s -- --yes --device-id mydevice --log local
 ```
 
-</details>
+From a clone, `sudo ./install.sh` installs the local `awacs.sh` instead of downloading it. Manual install:
 
-<details>
-<summary>🔧 <strong>Advanced Setup (Full Customization) | الإعداد المتقدم (تخصيص كامل)</strong></summary>
-
-### 🎛️ **What it configures | ما يقوم بتكوينه**
-
-The advanced setup walks through ALL configurable options:
-
-الإعداد المتقدم يمر عبر جميع الخيارات القابلة للتخصيص:
-
-#### 🌍 **1. Language Configuration | تكوين اللغة**
-- **English Only**: Interface and logs in English
-- **Arabic Only**: واجهة وسجلات باللغة العربية
-- **Bilingual**: Both languages (recommended) | كلا اللغتين
-
-#### ⚡ **2. Performance Mode | وضع الأداء**
-- **Fast (60s)**: High performance, gaming/streaming
-- **Balanced (90s)**: Optimal for daily use (default)
-- **Conservative (155s)**: Maximum stability, critical systems
-
-#### 📊 **3. Logging Configuration | تكوين التسجيل**
-- **Local Only**: Save logs beside script
-- **Remote Only**: Send to configured server
-- **Both**: Local + Remote logging
-- **None**: Disable logging (not recommended)
-
-#### 📁 **4. Directory Customization | تخصيص المجلدات**
-- **Default**: Use `awacs/` beside script
-- **Custom**: Specify custom paths for work, logs, temp, config
-
-#### 🔧 **5. Device Configuration | تكوين الجهاز**
-- **Device ID**: Unique identifier (e.g., AWACS-RaspberryPi-01)
-- **Device Name**: Human-readable name
-- **Remote URL**: Server for remote logging
-
-#### 🌐 **6. Network Options | خيارات الشبكة**
-- **Auto-connect to open networks**: Yes/No
-- **Connect to hidden networks**: Yes/No  
-- **Night mode**: Reduced activity 11 PM - 6 AM
-- **Stealth mode**: Minimal logging and activity
-
-#### 🔄 **7. System Service | خدمة النظام**
-- **Create systemd service**: Auto-start on boot
-- **Start service now**: Begin monitoring immediately
-
-### ✅ **Best for | الأفضل لـ**
-- Enterprise deployments | النشر المؤسسي
-- Custom requirements | المتطلبات المخصصة
-- Remote monitoring | المراقبة البعيدة
-- Specific performance needs | احتياجات الأداء المحددة
-
-### 📝 **Example | مثال**
-```bash
-# Advanced setup walk-through:
-# خطوات الإعداد المتقدم:
-
-Language → Arabic Only
-Performance → Fast (60s) for gaming
-Logging → Remote to monitoring server
-Directory → Custom: /opt/awacs-production
-Device ID → AWACS-Gaming-Rig-Main
-Network → Auto-connect: Yes, Hidden: Yes
-Service → Create and start immediately
-
-# Result: Fully customized installation
-# النتيجة: تثبيت مخصص بالكامل
+```sh
+sudo install -m 755 awacs.sh /usr/local/bin/awacs.sh
+sudo install -m 600 -o root -g root awacs.conf.example /etc/awacs.conf
+sudo nano /etc/awacs.conf
 ```
 
-</details>
+Then start it at boot by one of two methods, never both: a second launcher's instance loses the single-instance lock and exits every ten seconds. The systemd unit is `systemd/awacs.service`; it needs a drop-in with the device id:
 
-<div align="center">
-
-### 🔧 **Manual Installation**
-
-</div>
-
-<table>
-<tr>
-<td width="50%">
-
-#### 🇺🇸 **English Setup**
-```bash
-# Clone the repository
-git clone https://github.com/hmne/awacs.git
-cd awacs
-
-# Make executable and run
-chmod +x awacs.sh
-sudo ./awacs.sh
+```sh
+sudo install -m 644 systemd/awacs.service /etc/systemd/system/awacs.service
+sudo mkdir -p /etc/systemd/system/awacs.service.d
+printf '[Service]\nEnvironment=DEVICE_ID=mydevice\n' | sudo tee /etc/systemd/system/awacs.service.d/10-device-id.conf
+sudo systemctl daemon-reload
+sudo systemctl enable --now awacs
 ```
 
-</td>
-<td width="50%">
+The `rc.local` method is two lines placed before anything that needs the network:
 
-#### 🇸🇦 **الإعداد العربي**
-```bash
-# نسخ المستودع
-git clone https://github.com/hmne/awacs.git
-cd awacs
-
-# جعله قابل للتنفيذ والتشغيل
-chmod +x awacs.sh
-sudo ./awacs.sh
+```sh
+export DEVICE_ID="mydevice"
+( while :; do /usr/local/bin/awacs.sh; sleep 10; done ) >/dev/null 2>&1 &
 ```
 
-</td>
-</tr>
-</table>
+Verify with `sudo awacs.sh status`: the daemon line shows a pid, the internet line shows ONLINE. The first line in `/var/log/awacs.log` carries `AWACS 1.0 starting on wlan0 (device mydevice)`, followed by a `reporting:` line with the applied reporting knobs. With `LOG_TARGET` set to `both` or `remote`, the site's `log/log.txt` receives a start line and `tmp/wifi.tmp` appears within a minute. Upgrade, uninstall and every wizard option are in [docs/en/install.md](docs/en/install.md).
 
----
+## Configuration
 
-## 🎮 **Command Center** | **مركز التحكم**
+One file, `/etc/awacs.conf`, owned by root with mode `0600` and plain `KEY=value` lines. The script refuses a file that is not owned by root or that group or others can read or write, and prints why. Every number is validated; a bad value falls back to the default instead of stopping the daemon. The daemon reads the file at start, so restart it after an edit (`sudo systemctl restart awacs`; under `rc.local`, send TERM to the pid shown by `status` and the loop respawns the daemon within ten seconds).
 
-<div align="center">
+The reporting knobs:
 
-### 🎛️ **Performance Modes** | **أوضاع الأداء**
-
-</div>
-
-```bash
-# 🏎️ Fast Mode - للألعاب والبث
-sudo ./awacs.sh --performance --lang-both --verbose
-
-# ⚖️ Balanced Mode - للاستخدام اليومي (افتراضي)
-sudo ./awacs.sh --balanced --lang-both --log-local
-
-# 🛡️ Conservative Mode - للأنظمة الحيوية
-sudo ./awacs.sh --conservative --lang-ar --daemon --quiet
+```text
+SITE_URL=""              # base URL of a reporting site; empty = local-only operation
+SITE_API="receiver.php"  # endpoint file name under SITE_URL/DEVICE_ID/; the shipped receiver's name
+LOG_TARGET="local"       # local | both | remote; both and remote need SITE_URL
+PROBE_URL=""             # upload-probe target; empty = the site endpoint when SITE_URL is set
+REPORT_WIFI="auto"       # WiFi cell to the site; auto = on when SITE_URL is set and LOG_TARGET is both or remote
+SITE_TZ=""               # time zone of the site log stamps, e.g. Europe/Berlin; empty = the device's zone
+LOG_LANG="en"            # language of the local log's story lines: en | ar
+SITE_LANG="en"           # language of the lines sent to the site: en | ar
 ```
 
-<div align="center">
-
-### 🌐 **Language Controls** | **التحكم في اللغة**
-
-</div>
-
-```bash
-# English Interface Only
-sudo ./awacs.sh --lang-en --performance
-
-# Arabic Interface Only - واجهة عربية فقط
-sudo ./awacs.sh --lang-ar --conservative
-
-# Bilingual Mode - الوضع ثنائي اللغة (Default)
-sudo ./awacs.sh --lang-both --balanced
-```
-
-<div align="center">
-
-### 📊 **Logging Options** | **خيارات التسجيل**
-
-</div>
-
-```bash
-# Local Logging Only (Default)
-sudo ./awacs.sh --log-local
-
-# Remote Logging to Server  
-sudo ./awacs.sh --log-remote
-
-# Hybrid Logging (Local + Remote)
-sudo ./awacs.sh --log-both
-
-# Stealth Mode (No Logging)
-sudo ./awacs.sh --log-none --quiet
-```
-
----
-
-## 🎮 **Installation Examples** | **أمثلة التثبيت**
-
-<details>
-<summary>📱 <strong>Interactive Installer Screenshots | لقطات شاشة للمثبت التفاعلي</strong></summary>
-
-### 🌍 **Language Selection | اختيار اللغة**
-```
-🌍 Language Selection | اختيار اللغة
-
-Choose your preferred language for the installer
-اختر لغتك المفضلة للمثبت
-
-[1] English
-     Full English interface and messages
-[2] العربية  
-     واجهة وأرائل باللغة العربية بالكامل
-[3] Bilingual | ثنائي اللغة
-     Both languages (recommended)
-
-Default: 3 (Bilingual) - Press Enter for default
-Select option number: ►
-```
-
-### 🛠️ **Setup Mode Selection | اختيار وضع الإعداد**
-```
-🛠️ Setup Mode | وضع الإعداد
-
-Choose your preferred setup level | اختر مستوى الإعداد المطلوب
-
-[1] Simple Setup | إعداد بسيط
-     Quick setup with optimal defaults | إعداد سريع مع الخيارات المثلى
-[2] Advanced Setup | إعداد متقدم
-     Full customization | تخصيص كامل لجميع الخيارات
-
-Default: 1 (Simple) | الافتراضي: 1 (بسيط) - Press Enter | اضغط Enter
-Select option number: ►
-```
-
-### ⚡ **Performance Configuration (Advanced Mode) | إعداد الأداء (الوضع المتقدم)**
-```
-⚡ Performance Configuration | إعداد الأداء
-
-Choose performance mode | اختر وضع الأداء
-
-[1] Fast | سريع (60s)
-     High performance | أداء عالي - Gaming/streaming | ألعاب/بث
-[2] Balanced | متوازن (90s)  
-     Optimal balance | توازن مثالي (Recommended | مستحسن)
-[3] Stable | مستقر (155s)
-     Maximum stability | أقصى استقرار - Critical systems | أنظمة حيوية
-
-Default: 2 (Balanced) | الافتراضي: 2 (متوازن) - Press Enter | اضغط Enter
-Select option number: ►
-```
-
-</details>
-
----
-
-## ⚙️ **Advanced Configuration** | **التكوين المتقدم**
-
-<details>
-<summary>🔧 <strong>Configuration File Setup</strong></summary>
-
-Edit the configuration variables at the top of `awacs.sh`:
-
-```bash
-# ============================================
-# LANGUAGE SETTINGS | إعدادات اللغة
-# ============================================
-LANGUAGE="both"                    # "en" | "ar" | "both"
-
-# ============================================
-# LOGGING CONFIGURATION | تكوين التسجيل
-# ============================================
-LOG_MODE="local"                   # "local" | "remote" | "both" | "none"
-REMOTE_LOGGING="no"                # "yes" to enable remote logging
-REMOTE_URL=""                      # Your server URL for remote logs
-
-# ============================================
-# DEVICE IDENTIFICATION | تعريف الجهاز
-# ============================================
-DEVICE_ID="AWACS-$(hostname)"      # Unique device identifier
-DEVICE_NAME="AWACS WiFi Manager"   # Human-readable device name
-
-# ============================================
-# PERFORMANCE TUNING | ضبط الأداء
-# ============================================
-SPEED_MODE="balanced"              # "fast" | "balanced" | "conservative"
-
-# ============================================
-# DIRECTORY CUSTOMIZATION | تخصيص المجلدات
-# ============================================
-DEFAULT_DIR_NAME="awacs"           # Default folder name beside script
-CUSTOM_WORK_DIR=""                 # Custom work directory (optional)
-CUSTOM_LOG_DIR=""                  # Custom log directory (optional)
-
-# ============================================
-# NETWORK PREFERENCES | تفضيلات الشبكة  
-# ============================================
-AUTO_CONNECT_OPEN="no"             # Connect to open networks (disabled by default)
-CONNECT_HIDDEN="yes"               # Search for hidden networks
-PREFERRED_NETWORKS=("MyHome" "MyOffice")  # Priority network list
-```
-
-</details>
-
-<details>
-<summary>🏗️ <strong>Directory Structure</strong></summary>
-
-AWACS creates a self-contained, organized directory structure:
-
-```
-📁 awacs/
-├── 🚀 awacs.sh                   # Main script (3,189+ lines, 132KB)
-├── 📖 README.md                  # This beautiful documentation
-├── 📜 LICENSE                    # MIT License  
-├── 📝 CHANGELOG.md               # Detailed version history
-├── 🔧 install.sh                 # Interactive installer (1,427+ lines)
-├── 📋 CUSTOM_PATHS_GUIDE.md      # Custom paths configuration guide
-├── 📁 awacs/                     # Created automatically (configurable name)
-│   ├── 📁 logs/
-│   │   ├── 📊 awacs.log          # Main operation log
-│   │   ├── 🚨 error.log          # Error-only log  
-│   │   └── 📈 performance.log    # Performance metrics
-│   ├── 📁 temp/
-│   │   ├── 🔒 awacs.pid          # Process ID file
-│   │   ├── 🔐 awacs.lock         # Instance lock file
-│   │   └── 📶 scan_cache.tmp     # Network scan cache
-│   └── 📁 config/
-│       ├── ⚙️ networks.conf      # Known networks
-│       ├── 🎯 preferences.conf   # User preferences
-│       └── 📡 interfaces.conf    # Network interfaces
-└── 📁 docs/                      # Additional documentation
-    ├── 🎓 tutorials/             # Step-by-step guides
-    ├── 🔧 troubleshooting/       # Problem solving guides
-    └── 🌍 translations/          # Language files
-```
-
-</details>
-
----
-
-## 🎯 **Use Cases & Examples** | **حالات الاستخدام والأمثلة**
-
-<div align="center">
-
-### 🏠 **Smart Home** | **المنزل الذكي**
-
-</div>
-
-```bash
-# Family home with multiple devices
-sudo ./awacs.sh --balanced --lang-both --log-local --verbose
-```
-
-<div align="center">
-
-### 🏢 **Enterprise Environment** | **البيئة المؤسسية**
-
-</div>
-
-```bash
-# Corporate network with high security requirements
-sudo ./awacs.sh --conservative --lang-en --log-both --daemon
-```
-
-<div align="center">
-
-### 🎮 **Gaming & Streaming** | **الألعاب والبث**
-
-</div>
-
-```bash
-# Optimized for low latency and high throughput
-sudo ./awacs.sh --performance --lang-en --log-none --verbose
-```
-
-<div align="center">
-
-### 🏭 **Industrial IoT** | **إنترنت الأشياء الصناعي**
-
-</div>
-
-```bash
-# Critical infrastructure with maximum reliability
-sudo ./awacs.sh --conservative --lang-ar --daemon --quiet
-```
-
-<div align="center">
-
-### 🚐 **Mobile/RV Setup** | **الإعداد المتنقل**
-
-</div>
-
-```bash
-# Constantly changing networks while traveling
-sudo ./awacs.sh --performance --lang-both --log-remote
-```
-
----
-
-## 📊 **Performance Metrics** | **مقاييس الأداء**
-
-<div align="center">
-
-| Metric | Fast Mode | Balanced Mode | Conservative Mode |
-|:------:|:---------:|:-------------:|:--------------:|
-| **Recovery Time** | ⚡ 60s | ⚖️ 90s | 🛡️ 155s |
-| **Resource Usage** | 🔥 High | 💚 Medium | 🌿 Low |
-| **Power Consumption** | 🔋 High | 🔋 Medium | 🔋 Minimal |
-| **Network Scanning** | 📡 Aggressive | 📡 Moderate | 📡 Conservative |
-| **Connection Strategy** | 🔄 Fast retries | 🔄 Balanced | 🔄 Patient approach |
-
-</div>
-
----
-
-## 🛠️ **System Requirements** | **متطلبات النظام**
-
-<div align="center">
-
-### 💻 **Hardware Requirements** | **متطلبات الأجهزة**
-
-</div>
-
-<table>
-<tr>
-<td width="50%" align="center">
-
-#### 🎯 **Minimum Requirements**
-- **CPU**: ARM Cortex-A7 (Pi Zero 2W)
-- **RAM**: 512MB 
-- **Storage**: 50MB free space
-- **WiFi**: 802.11b/g/n adapter
-
-</td>
-<td width="50%" align="center">
-
-#### 🚀 **Recommended Specifications**  
-- **CPU**: ARM Cortex-A72 (Pi 4)
-- **RAM**: 1GB+
-- **Storage**: 200MB free space  
-- **WiFi**: 802.11ac dual-band
-
-</td>
-</tr>
-</table>
-
-<div align="center">
-
-### 🖥️ **Software Requirements** | **متطلبات البرمجيات**
-
-</div>
-
-| Component | Version | Purpose |
-|:---------:|:-------:|:-------:|
-| **Linux Kernel** | 4.9+ | Wireless extensions support |
-| **Bash** | 4.0+ | Script execution |
-| **iw/iwconfig** | Latest | WiFi interface management |
-| **wpa_supplicant** | 2.0+ | Network authentication |
-| **curl** | 7.0+ | Remote logging (optional) |
-
----
-
-## 🚨 **Emergency Features** | **ميزات الطوارئ**
-
-<details>
-<summary>🆘 <strong>Emergency Recovery Modes</strong></summary>
-
-### 🔧 **Nuclear Reset**
-When all else fails, AWACS includes a nuclear reset option:
-```bash
-sudo ./awacs.sh nuclear_reset
-```
-
-### 🛡️ **Survival Mode**
-Ultra-low resource mode for critical situations:
-```bash
-sudo ./awacs.sh --survival-mode
-```
-
-### 📱 **Remote Emergency Control**
-Enable remote emergency control (configure remote URL first):
-```bash
-sudo ./awacs.sh --enable-remote-emergency
-```
-
-</details>
-
----
-
-## 📚 **Documentation** | **الوثائق**
-
-<div align="center">
-
-### 🎯 **Available Guides | الأدلة المتاحة**
-
-| Document | Description | اللغة |
-|:--------:|:-----------:|:-----:|
-| **📖 WIKI.md** | Complete detailed guide for every option | **الدليل الشامل المفصل لكل خيار** |
-| **🚀 INSTALLATION_GUIDE.md** | Interactive vs Quick installation | **دليل التثبيت التفاعلي مقابل السريع** |
-| **📁 CUSTOM_PATHS_GUIDE.md** | Custom directory configuration | **دليل تخصيص مسارات المجلدات** |
-| **📝 CHANGELOG.md** | Version history and updates | **تاريخ الإصدارات والتحديثات** |
-
-</div>
-
----
-
-## 🤝 **Community & Support** | **المجتمع والدعم**
-
-<div align="center">
-
-### 💬 **Get Help** | **احصل على المساعدة**
-
-- **🐛 Report Issues**: Use GitHub Issues for bug reports | **الإبلاغ عن الأخطاء**: استخدم GitHub Issues
-- **❓ Ask Questions**: Check WIKI.md first for detailed answers | **طرح الأسئلة**: راجع WIKI.md أولاً للإجابات المفصلة
-- **📖 Documentation**: All guides available in repository | **الوثائق**: جميع الأدلة متاحة في المستودع
-
-### 🎯 **Contributing** | **المساهمة**
-
-- **🔄 Pull Requests**: Contributions welcome | **المساهمات مرحب بها**
-- **📝 Documentation**: Help improve guides | **ساعد في تحسين الأدلة**
-- **🧪 Testing**: Test in different environments | **اختبر في بيئات مختلفة**
-
-</div>
-
----
-
-## 📜 **License & Credits** | **الرخصة والاعتمادات**
-
-<div align="center">
-
-### 📄 **MIT License**
-This project is open source and available under the [MIT License](LICENSE).
-
-### 🏆 **Created with ❤️ in Kuwait** 🇰🇼
-
-**Original Developer**: NetStorm - AbuNaif (محمد المطيري)  
-**Location**: Kuwait City, Kuwait  
-**Inspiration**: Military AWACS aircraft precision and reliability
-
-**Contact**: Available through GitHub repository | **التواصل**: متاح عبر مستودع GitHub
-
-</div>
-
----
-
-<div align="center">
-
-## 🚀 **Ready to Deploy?** | **جاهز للنشر؟**
-
-<img src="https://readme-typing-svg.herokuapp.com?font=Orbitron&size=24&duration=2000&pause=1000&color=00D4FF&center=true&vCenter=true&width=600&lines=Start+your+AWACS+journey+now!;ابدأ+رحلتك+مع+أواكس+الآن!" alt="Call to Action" />
-
-### 🎯 **One Command to Rule Them All**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/hmne/awacs/main/install.sh | sudo bash
-```
-
----
-
-**🛡️ AWACS: Where Connectivity Meets Intelligence 🛡️**  
-**🛡️ أواكس: حيث يلتقي الاتصال بالذكاء 🛡️**
-
----
-
-<small>
-Made with 🔥 and ☕ in Kuwait | صُنع بـ 🔥 و ☕ في الكويت  
-Last Updated: December 2024 | آخر تحديث: ديسمبر 2024
-</small>
-
-</div>
+With no site and no probe target the daemon runs in signal mode: it supervises connectivity, joins the strongest working stored network when the internet is lost, and does no upload measurement and no switching.
+
+`DEVICE_ID` comes from the environment (the `rc.local` export or the systemd drop-in), not from the file. The log is `/var/log/awacs.log`, rotated to `LOG_CAP` lines. Runtime state lives in `/run/awacs`, root-only, gone at reboot. Every knob with its default is in [awacs.conf.example](awacs.conf.example); the full table with ranges and effects is in [docs/en/configuration.md](docs/en/configuration.md).
+
+## Commands
+
+The same file is a toolbox. These words run beside the daemon and are read-only except `speed`; the labels they print are bilingual.
+
+| Command | Root | Output |
+| --- | --- | --- |
+| `sudo awacs.sh status` | yes | device, backend, daemon pid, network, signal, address, gateway, internet, viewer, current upload rate |
+| `sudo awacs.sh networks` | yes | stored networks, and which of them are visible now |
+| `sudo awacs.sh evaluate` | yes | visible networks ranked by signal: current mark, id, priority, signal, security, name |
+| `sudo awacs.sh scan` | yes | the raw scan, cached for `SCAN_TTL` seconds |
+| `sudo awacs.sh speed` | yes | one real upload probe to the probe target |
+| `awacs.sh check` | no | `internet: OK` with exit 0, or `internet: DOWN` with exit 1 |
+| `awacs.sh help` | no | the command list |
+
+Non-ASCII network names are decoded for display and matched byte-exactly inside.
+
+## Documentation
+
+| Page | Contents |
+| --- | --- |
+| [features.md](docs/en/features.md) | every behaviour with its knob and log line |
+| [how-it-works.md](docs/en/how-it-works.md) | main loop, recovery order, on-device versus external outage, reboot condition, NetworkManager supervision, spool, scan sources |
+| [configuration.md](docs/en/configuration.md) | every knob with default, unit, effect and range; the file's rules; deployment shapes |
+| [scenarios.md](docs/en/scenarios.md) | what the stock stack does versus what AWACS does, with sample log lines |
+| [install.md](docs/en/install.md) | wizard, manual install, systemd versus rc.local, upgrade, uninstall |
+| [integration.md](docs/en/integration.md) | the endpoint contract, the shipped receivers, the WiFi cell |
+| [troubleshooting.md](docs/en/troubleshooting.md) | log lines and what each means |
+| [faq.md](docs/en/faq.md) | short answers |
+
+## Dashboard and receivers
+
+`tools/awacs-tui.sh` is a read-only terminal dashboard: run it on the device with `sudo`, it needs bash 5, and it takes `--plain`, `--once`, `--lang en|ar` and `--interval N`. `server/receiver.php` (PHP 7.4 or later) and `server/receiver.py` (Python 3, standard library) are two self-hosted receivers for the endpoint contract; both are described in [server/README.md](server/README.md).
+
+## Limitations
+
+- WiFi only: there is no Ethernet fallback, and a connection counts only with an IPv4 lease. IPv6-only networks are not supported.
+- A ping that succeeds while DNS is dead reads as online.
+- Live-stream detection matches only `raspistill` processes with `live_raw`, `preview.jpg` or `capture.jpg` in their command line and `curl` processes with `upfile=@`; other workloads are not detected.
+- Rung L3 reloads the `brcmfmac` module unconditionally; on other WiFi chips that rung does nothing.
+- The reboot cannot be switched off, only delayed: `REBOOT_AFTER_MIN` rejects 0.
+- The once-per-boot background `apt-get` install of missing tools has no off switch.
+- Open networks are joined as a last resort by default (`OPEN_NETWORKS="yes"`).
+- Site log lines carry an Arabic message where the program has one; the local log is English.
+- wpa backend only: open networks with non-ASCII names are skipped, and stored names containing a backslash, a double quote, a tab, a newline, an escape byte or an edge space never match visibility.
+- nm backend: a hidden stored profile must already carry `802-11-wireless.hidden=yes`, and NetworkManager device state 20 (unavailable) never starts the reboot timer.
+- Not tested: captive portals, a real ISP outage, IPv6.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

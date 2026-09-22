@@ -1,0 +1,68 @@
+# /etc/awacs.conf - AWACS settings. One KEY=value per line; a line behind # keeps the
+# default written on it. Every setting is explained, with examples, in docs/en/configuration.md
+# إعدادات AWACS. سطر KEY=value لكل إعداد؛ السطر الذي أمامه # يبقى على الافتراضي المكتوب فيه.
+# شرح كل إعداد مع أمثلة في docs/ar/configuration.md
+#
+# Owned by root, mode 0600: awacs.sh ignores a file that is not root's or that group or
+# others can read. Plain assignments only: no readonly, no declare, no commands. Numbers:
+# whole, 1 to 9999999. A bad value falls back to the default. Restart the daemon after an edit.
+# ملك root وصلاحية 0600: يتجاهل awacs.sh ملفاً ليس ملك root أو تستطيع المجموعة أو الآخرون
+# قراءته. أسطر تعيين بسيطة فقط: لا readonly ولا declare ولا أوامر. الأرقام صحيحة من 1 إلى
+# 9999999، والقيمة الخاطئة تعود إلى الافتراضي. أعد تشغيل الخدمة بعد أي تعديل.
+#
+#   sudo cp awacs.conf.example /etc/awacs.conf
+#   sudo chown root:root /etc/awacs.conf && sudo chmod 600 /etc/awacs.conf
+#
+# Not set here: DEVICE_ID (from the environment: the rc.local export or the systemd
+# drop-in) and the WiFi interface (detected; AWACS_IF overrides).
+# لا يُضبط هنا: DEVICE_ID (من البيئة: سطر export في rc.local أو ملف إضافة systemd)
+# وكرت الواي فاي (يُكتشف تلقائياً؛ AWACS_IF يتجاوزه).
+
+# ---- Reporting / التقارير ----------------------------------------------------------
+# SITE_URL=""                  # http://host or https://host[/path] | empty = local-only
+# SITE_API="receiver.php"      # endpoint file name under SITE_URL/DEVICE_ID/
+# LOG_TARGET="local"           # "local" | "both" | "remote"  (both and remote need SITE_URL)
+# PROBE_URL=""                 # http(s)://... | empty = the site endpoint, or signal mode
+# REPORT_WIFI="auto"           # "auto" | "yes" | "no"
+# SITE_TZ=""                   # Area/City | empty = the device's own zone
+# LOG_LANG="en"                # "en" | "ar" - the local log
+# SITE_LANG="en"               # "en" | "ar" - the lines sent to the site
+
+# ---- Emergency networks / شبكات الطوارئ -------------------------------------------
+# SAFETY_NET["hotspot name"]="password"    # 8-63 characters or 64 hex digits; "" = open
+# SAFETY_NET["second hotspot"]="password"
+
+# ---- Timing / التوقيت --------------------------------------------------------------
+# TICK=10                      # seconds - main-loop period
+# NET_FAIL_TICKS=3             # ticks without internet before recovery
+# ASSOC_WAIT=25                # seconds - association and DHCP wait
+# PREF_CHECK=600               # seconds between preferred-network looks
+# REBOOT_AFTER_MIN=30          # minutes of on-device fault before a reboot
+
+# ---- Upload rules / قواعد الرفع ----------------------------------------------------
+# PROBE_KB=200                 # KB per upload probe
+# MIN_UP_KBPS=400              # kbps - day floor
+# UP_STRIKES=3                 # slow samples before an evaluation
+# SWITCH_GAIN_PCT=150          # percent a challenger must reach (day)
+# DANCE_COOLDOWN=1200          # seconds between evaluations (day)
+# STREAM_MIN_KBPS=50           # kbps - a live stream below this is starving
+
+# ---- Night profile / وضع الليل -----------------------------------------------------
+# NIGHT_MODE="yes"             # "yes" | "no"
+# NIGHT_START="22:00"          # HH:MM
+# NIGHT_END="06:00"            # HH:MM
+# NIGHT_MIN_UP_KBPS=200        # kbps - night floor
+# NIGHT_GAIN_PCT=300           # percent (night)
+# NIGHT_DANCE_COOLDOWN=2400    # seconds (night)
+
+# ---- Behaviour / السلوك ------------------------------------------------------------
+# OPEN_NETWORKS="yes"          # "yes" | "no" - open networks as the last resort
+# STEALTH_MODE="no"            # "yes" | "no" - drop incoming ping, stop avahi
+# DEBUG="yes"                  # "yes" | "no" - DEBUG lines in the local log
+
+# ---- Files / الملفات ---------------------------------------------------------------
+# LOG_FILE=/var/log/awacs.log  # absolute path
+# LOG_CAP=1500                 # lines kept after rotation
+# RUN_DIR=/run/awacs           # absolute path - private state directory
+# SCAN_TTL=30                  # seconds a scan result is reused
+# SPOOL_CAP=60                 # site-log lines kept while offline

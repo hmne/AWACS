@@ -1,660 +1,199 @@
-#!/bin/bash
-# ===================================================
-# AWACS - Advanced WiFi Auto Connection System
-# أواكس - أنظمة واي فاي التلقائية كاملة السيطرة
-# VER 1.0 (Ultra-Stable)
-# ===================================================
+#!/usr/bin/env bash
 #
-#     █████╗ ██╗    ██╗ █████╗  ██████╗███████╗
-#    ██╔══██╗██║    ██║██╔══██╗██╔════╝██╔════╝
-#    ███████║██║ █╗ ██║███████║██║     ███████╗
-#    ██╔══██║██║███╗██║██╔══██║██║     ╚════██║
-#    ██║  ██║╚███╔███╔╝██║  ██║╚██████╗███████║
-#    ╚═╝  ╚═╝ ╚══╝╚══╝ ╚═╝  ╚═╝ ╚═════╝╚══════╝
+# awacs.sh — AWACS 1.0 (Advanced WiFi Auto Connection System)
+# Successor to aasw.sh v7.9.1 with full feature parity: every aasw capability lives
+# here, kept, improved, or replaced by a documented superior; the only two divergences
+# are deliberate (no reboot for ISP outages, no routine download tests). Auto-install
+# of missing tools: right package names, background, once per boot, no exec-restart.
+# Mission: FIGHT for internet until connected. Network choice follows MEASURED UPLOAD
+#   speed (the device uploads; download is irrelevant) — never signal strength alone.
+# Role: SD-resident daemon (/usr/local/bin), launched from rc.local or a systemd unit
+#   BEFORE the workload — it must work with no internet, so it is never fetched remotely.
+# Platform: DUAL-STACK. Legacy Pi OS (dhcpcd +
+#   wpa_supplicant) = the wpa backend, byte-for-byte the proven pillar. NetworkManager
+#   images (Bookworm default) = the nm backend: AWACS SUPERVISES NM — it observes,
+#   defers to NM's own autonomy, and intervenes cooperatively (nmcli only) after NM
+#   provably fails. Monitor-only remains solely for unmanaged/broken-nmcli images.
+# IDs: wpa numeric network ids on legacy; profile UUIDs on nm. Matching: raw escaped
+#   text on wpa; LOWERCASE HEX BYTES on nm — Arabic/emoji/symbol SSIDs all survive.
+# Known limitations (wpa backend ONLY — the nm hex path has none of these): OPEN
+#   networks with non-ASCII names are skipped (the supplicant's quoted parser cannot
+#   take iw's escaped form); and KNOWN names containing a literal backslash,
+#   double-quote, TAB/LF/CR/ESC or edge space never match visibility — every sane
+#   name works.
 #
-#            🛡️ Always Watching, Always Connected 🛡️
-#            🛡️ مراقبة دائمة، اتصال مستمر 🛡️
+# rc.local contract (ORDER MATTERS — after the DEVICE_ID export; REPLACES aasw.sh:
+# delete the old aasw.sh line AND /usr/local/bin/aasw.sh, two WiFi authorities fight):
+#   export DEVICE_ID="<device-id>"
+#   ( while :; do /usr/local/bin/awacs.sh; sleep 10; done ) >/dev/null 2>&1 &
 #
-# ===================================================
-# Created by: NetStorm - AbuNaif (hmne)
-# GitHub: https://github.com/hmne/awacs
-# بواسطة: نت ستورم - أبونايف (محمد المطيري)
-# ===================================================
-#
-# AWACS Definition - تعريف أواكس:
-# 🔹 Advanced    - متقدم      : Sophisticated algorithms
-# 🔹 WiFi        - واي فاي    : Wireless network management  
-# 🔹 Auto        - تلقائي     : Autonomous operation
-# 🔹 Connection  - اتصال      : Network connectivity
-# 🔹 System      - نظام       : Complete solution
-#
-# Military AWACS aircraft provide continuous surveillance
-# and control of airspace. Similarly, this AWACS ensures
-# uninterrupted WiFi connectivity through intelligent
-# monitoring and automatic network management.
-#
-# طائرات الإنذار المبكر العسكرية توفر مراقبة وتحكم مستمر
-# للمجال الجوي. بالمثل، هذا الأواكس يضمن اتصال واي فاي
-# متواصل من خلال المراقبة الذكية والإدارة التلقائية للشبكة.
-# ===================================================
+# Manual toolbox (runs BESIDE the daemon, read-only except `speed`):
+#   awacs.sh status | networks | evaluate | scan | speed | check | help
+# Compat flags (old aasw launch lines keep working): -d self-daemonizes, -q is a no-op
+# (logging is file-only by design), -h prints help.
+#-------------------------------------------------------------------------------
+set -uo pipefail
+IFS=$'\n\t'
+umask 077   # every runtime file (log/cache/spool/pid/probe) lands root-only — SSID lists are location data
 
-# ========================================
-# USER CONFIGURATION - إعدادات المستخدم
-# ========================================
-
-# LANGUAGE SETTINGS | إعدادات اللغة
-# Choose your preferred language:
-# اختر لغتك المفضلة:
-# "en" = English only | إنجليزي فقط
-# "ar" = Arabic only | عربي فقط
-# "both" = Bilingual (English + Arabic) | ثنائي اللغة (إنجليزي + عربي)
-LANGUAGE="both"
-
-# LOGGING PREFERENCES | تفضيلات التسجيل
-# Choose how to save logs:
-# اختر كيفية حفظ السجلات:
-# "local" = Save logs locally only | حفظ السجلات محلياً فقط
-# "remote" = Send logs to remote server only | إرسال السجلات للخادم البعيد فقط
-# "both" = Local + Remote logging | تسجيل محلي + بعيد
-# "none" = No logging (not recommended) | بدون تسجيل (غير مستحسن)
-LOG_MODE="local"
-
-# REMOTE LOGGING CONFIGURATION | تكوين التسجيل البعيد
-# Enable remote logging? | تفعيل التسجيل البعيد؟
-REMOTE_LOGGING="no"              # "yes" to enable | "yes" للتفعيل
-
-# Remote server URL (configure only if REMOTE_LOGGING="yes")
-# رابط الخادم البعيد (اضبط فقط إذا كان REMOTE_LOGGING="yes")
-REMOTE_URL=""                    # Example: "http://your-server.com/awacs"
-
-# DEVICE CONFIGURATION | تكوين الجهاز
-DEVICE_ID="AWACS-1"              # Unique device identifier | معرف جهاز فريد
-DEVICE_NAME="AWACS WiFi Manager" # Device display name | اسم عرض الجهاز
-
-# ========================================
-# CUSTOM PATHS CONFIGURATION | تكوين المسارات المخصصة
-# ========================================
-
-# Custom directory paths (leave empty to use default beside script)
-# مسارات مجلدات مخصصة (اتركها فارغة لاستخدام الافتراضي جانب السكريبت)
-
-CUSTOM_WORK_DIR=""               # Custom work directory | مجلد العمل المخصص
-                                 # Example: "/home/user/awacs" | مثال: "/home/user/awacs"
-                                 # Leave empty for default: script_dir/test | اتركه فارغ للافتراضي
-
-CUSTOM_LOG_DIR=""                # Custom log directory | مجلد السجلات المخصص
-                                 # Example: "/var/log/awacs" | مثال: "/var/log/awacs"
-                                 # Leave empty for default: work_dir/logs | اتركه فارغ للافتراضي
-
-CUSTOM_TEMP_DIR=""               # Custom temp directory | مجلد الملفات المؤقتة المخصص
-                                 # Example: "/tmp/awacs" | مثال: "/tmp/awacs"
-                                 # Leave empty for default: work_dir/temp | اتركه فارغ للافتراضي
-
-CUSTOM_CONFIG_DIR=""             # Custom config directory | مجلد التكوين المخصص
-                                 # Example: "/etc/awacs" | مثال: "/etc/awacs"
-                                 # Leave empty for default: work_dir/config | اتركه فارغ للافتراضي
-
-# ========================================
-# DEFAULT DIRECTORY NAME | اسم المجلد الافتراضي
-# ========================================
-
-DEFAULT_DIR_NAME="awacs"         # Default directory name beside script | اسم المجلد الافتراضي جانب السكريبت
-                                 # Example: "awacs", "wifi-manager", "my-awacs" | مثال: "awacs", "wifi-manager", "my-awacs"
-                                 # This creates: script_dir/awacs/ | هذا ينشئ: script_dir/awacs/
-
-# ========================================
-# DIRECTORY STRUCTURE - هيكل المجلدات
-# ========================================
-
-# Get script directory | الحصول على مجلد السكريبت
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# ========================================
-# SMART PATH RESOLUTION | حل المسارات الذكي
-# ========================================
-
-# Function to validate and set custom paths | دالة للتحقق من وتعيين المسارات المخصصة
-setup_custom_paths() {
-    local errors=()
-    
-    # Work directory setup | إعداد مجلد العمل
-    if [[ -n "$CUSTOM_WORK_DIR" ]]; then
-        # Use custom work directory | استخدام مجلد العمل المخصص
-        WORK_DIR="$(realpath "$CUSTOM_WORK_DIR" 2>/dev/null || echo "$CUSTOM_WORK_DIR")"
-        echo "ℹ️  Using custom work directory: $WORK_DIR"
-        echo "ℹ️  استخدام مجلد عمل مخصص: $WORK_DIR"
-    else
-        # Default: beside script | الافتراضي: جانب السكريبت
-        WORK_DIR="$SCRIPT_DIR/$DEFAULT_DIR_NAME"
-    fi
-    
-    # Log directory setup | إعداد مجلد السجلات
-    if [[ -n "$CUSTOM_LOG_DIR" ]]; then
-        LOG_DIR="$(realpath "$CUSTOM_LOG_DIR" 2>/dev/null || echo "$CUSTOM_LOG_DIR")"
-        echo "ℹ️  Using custom log directory: $LOG_DIR"
-        echo "ℹ️  استخدام مجلد سجلات مخصص: $LOG_DIR"
-    else
-        LOG_DIR="$WORK_DIR/logs"
-    fi
-    
-    # Temp directory setup | إعداد مجلد الملفات المؤقتة
-    if [[ -n "$CUSTOM_TEMP_DIR" ]]; then
-        TEMP_WIFI_DIR="$(realpath "$CUSTOM_TEMP_DIR" 2>/dev/null || echo "$CUSTOM_TEMP_DIR")"
-        echo "ℹ️  Using custom temp directory: $TEMP_WIFI_DIR"
-        echo "ℹ️  استخدام مجلد ملفات مؤقتة مخصص: $TEMP_WIFI_DIR"
-    else
-        TEMP_WIFI_DIR="$WORK_DIR/temp"
-    fi
-    
-    # Config directory setup | إعداد مجلد التكوين
-    if [[ -n "$CUSTOM_CONFIG_DIR" ]]; then
-        CONFIG_DIR="$(realpath "$CUSTOM_CONFIG_DIR" 2>/dev/null || echo "$CUSTOM_CONFIG_DIR")"
-        echo "ℹ️  Using custom config directory: $CONFIG_DIR"
-        echo "ℹ️  استخدام مجلد تكوين مخصص: $CONFIG_DIR"
-    else
-        CONFIG_DIR="$WORK_DIR/config"
-    fi
-    
-    # Validate all paths | التحقق من صحة جميع المسارات
-    local all_dirs=("$WORK_DIR" "$LOG_DIR" "$TEMP_WIFI_DIR" "$CONFIG_DIR")
-    
-    for dir in "${all_dirs[@]}"; do
-        # Check if parent directory exists or can be created | فحص إذا كان المجلد الأب موجود أو يمكن إنشاؤه
-        local parent_dir="$(dirname "$dir")"
-        if [[ ! -d "$parent_dir" ]] && ! mkdir -p "$parent_dir" 2>/dev/null; then
-            errors+=("Cannot create parent directory for: $dir")
-            continue
-        fi
-        
-        # Try to create the directory | محاولة إنشاء المجلد
-        if ! mkdir -p "$dir" 2>/dev/null; then
-            errors+=("Cannot create directory: $dir")
-            continue
-        fi
-        
-        # Check write permissions | فحص صلاحيات الكتابة
-        if [[ ! -w "$dir" ]]; then
-            errors+=("No write permission for directory: $dir")
-        fi
-    done
-    
-    # Report errors if any | الإبلاغ عن الأخطاء إن وجدت
-    if [[ ${#errors[@]} -gt 0 ]]; then
-        echo "❌ Path setup errors | أخطاء في إعداد المسارات:"
-        for error in "${errors[@]}"; do
-            echo "   • $error"
-        done
-        echo ""
-        echo "💡 Falling back to default paths beside script"
-        echo "💡 العودة للمسارات الافتراضية جانب السكريبت"
-        
-        # Fallback to default paths | العودة للمسارات الافتراضية
-        WORK_DIR="$SCRIPT_DIR/$DEFAULT_DIR_NAME"
-        LOG_DIR="$WORK_DIR/logs"
-        TEMP_WIFI_DIR="$WORK_DIR/temp"
-        CONFIG_DIR="$WORK_DIR/config"
-        
-        # Create default directories | إنشاء المجلدات الافتراضية
-        mkdir -p "$WORK_DIR" "$LOG_DIR" "$TEMP_WIFI_DIR" "$CONFIG_DIR"
-    fi
-}
-
-# Setup paths | إعداد المسارات
-setup_custom_paths
-
-# Final file paths | مسارات الملفات النهائية
-LOG_FILE="$LOG_DIR/awacs.log"                # Main log file | ملف السجل الرئيسي
-
-# System files in local directory | ملفات النظام في المجلد المحلي
-PIDFILE="$TEMP_WIFI_DIR/awacs.pid"           # Process ID file | ملف معرف العملية
-REMOTE_LOG_FILE="$TEMP_WIFI_DIR/failed_remote_logs.txt"  # Failed remote logs | السجلات البعيدة الفاشلة
-LOCK_FILE="$TEMP_WIFI_DIR/awacs.lock"       # Process lock file | ملف قفل العملية
-LAST_SUCCESSFUL_SSID_FILE="$TEMP_WIFI_DIR/last_success.txt"  # Last successful SSID | آخر SSID ناجح
-LAST_SCAN_FILE="$TEMP_WIFI_DIR/last_scan.txt"              # Last scan results | نتائج آخر فحص
-SCAN_OUTPUT_TMP="$TEMP_WIFI_DIR/scan_output.tmp"           # Temporary scan output | مخرجات الفحص المؤقتة
-TEMP_WIFI_FILE="$TEMP_WIFI_DIR/open_networks.conf"         # Open networks config | تكوين الشبكات المفتوحة
-
-# Set up remote logging URL if enabled | إعداد رابط التسجيل البعيد إذا كان مفعلاً
-if [[ "$REMOTE_LOGGING" == "yes" && -n "$REMOTE_URL" ]]; then
-    URL_PATH="awacs"
-    URL="$REMOTE_URL"
-    log="$URL/log/write_file_.php"
-else
-    URL_PATH=""
-    URL=""
-    log=""
-fi
-
-# ========================================
-# PERFORMANCE & TIMING SETTINGS
-# ========================================
-
-# Timing Configuration - يتم تعديلها حسب SPEED_MODE
-CHECK_INTERVAL=5
-SWITCH_TIMEOUT=4
-MAX_FAILURES=3
-MIN_SPEED=1.5
-CRITICAL_SPEED=0.1
-
-# Advanced Options - يتم تعديلها حسب SPEED_MODE
-CONSERVE_RESOURCES="yes"
-SCAN_INTERVAL=30
-PRE_SCAN_SLEEP=2
-
-# ========================================
-# FEATURE CONFIGURATION
-# ========================================
-
-# Network Connection Features
-AUTO_CONNECT_OPEN="no"
-CONNECT_HIDDEN="yes"
-
-# Night Mode Settings
-NIGHT_MODE="no"
+# ------------------------------- configuration --------------------------------
+# DEFAULTS ONLY — the isolated settings file /etc/awacs.conf (PLAIN bash
+# assignments ONLY, e.g. MIN_UP_KBPS=250 or SAFETY_NET["MyPhone"]="pass" — a
+# readonly/declare line there is unsupported and would void the typo safety-net)
+# OVERRIDES any of them, then everything is sealed readonly. One file to tune.
+VERSION="1.0"
+TICK=10              # main-loop cadence: cheap checks only (1 ping, no downloads)
+NET_FAIL_TICKS=3     # failed checks in a row before the fight starts (40-63 s with TICK=10)
+ASSOC_WAIT=25        # seconds to wait for association + DHCP after a connect
+PROBE_KB=200         # UPLOAD probe size — DECISION moments only, sent to OUR site
+MIN_UP_KBPS=400      # DAY upload floor; sustained slower-while-active = look around
+UP_STRIKES=3         # low-upload strikes before considering a switch (hysteresis)
+SWITCH_GAIN_PCT=150  # DAY: challenger must beat the incumbent by >=150% (never-break law)
+DANCE_COOLDOWN=1200  # DAY seconds between comparison dances — a dance disrupts, ration it
+PREF_CHECK=600       # preferred-network look every 10min (a scan, no internet traffic)
+REBOOT_AFTER_MIN=30  # ME-problem persisting this long -> reboot; a SURVIVING wedge
+                     # earns another after the next full streak (~40min apart, never tight)
+OPEN_NETWORKS="yes"  # last-resort passwordless networks — delete the word yes to disable
+# --- Reporting site: all optional. Empty SITE_URL = the
+# daemon works LOCAL-ONLY (log file only, no probes, network choice by signal).
+SITE_URL=""          # base URL of the reporting site; AWACS talks to $SITE_URL/$DEVICE_ID/$SITE_API
+SITE_API="receiver.php"  # endpoint file name under that path (the shipped receiver); your site's own name here
+LOG_TARGET="local"   # local | both | remote — both/remote need SITE_URL; remote keeps only WARN/ERROR locally
+PROBE_URL=""         # upload-speed probe target (any URL accepting a POST body); default = the site's endpoint
+REPORT_WIFI="auto"   # publish the Wi-Fi cell (kbps,visible,total,band,SSID) to the site: auto | yes | no
+SITE_TZ=""           # time zone stamped on SITE log lines (e.g. Asia/Kuwait); empty = the device's own zone
+LOG_LANG="en"        # language of the LOCAL log's story lines: en | ar (DEBUG diagnostics stay English)
+SITE_LANG="en"       # language of the lines sent to the site: en | ar — independent of LOG_LANG
+# Emergency networks WITH passwords (aasw's SAFETY_NET, now real): tried after known
+# networks fail, BEFORE open strangers. Populate in /etc/awacs.conf, NOT here —
+# passwords are plain text and this script file gets shared/uploaded (OPSEC).
+declare -A SAFETY_NET=(
+  # ["MyPhoneHotspot"]="password"   # example — real entries belong in /etc/awacs.conf
+)
+# Night profile (aasw's night mode in the upload-kbps world): tolerate slower links,
+# switch far more reluctantly, stay stable while everyone sleeps. TICK stays 10s —
+# the loop is already night-cheap (aasw throttled its HEAVY 5s checks; ours are 1 ping).
+NIGHT_MODE="yes"
 NIGHT_START="22:00"
 NIGHT_END="06:00"
-NIGHT_CHECK_INTERVAL=15
-ORIGINAL_CHECK_INTERVAL=$CHECK_INTERVAL
-ORIGINAL_MIN_SPEED=$MIN_SPEED
+NIGHT_MIN_UP_KBPS=200
+NIGHT_GAIN_PCT=300
+NIGHT_DANCE_COOLDOWN=2400
+STEALTH_MODE="no"    # hide from casual LAN discovery (INPUT-chain icmp drop + no avahi);
+                     # FIXES aasw's OUTPUT-chain bug that broke its own probes
+DEBUG="${AWACS_DEBUG:-yes}" # decision-trace lines in the LOCAL log (aasw logged its
+                            # reasoning ALWAYS — parity default; conf/env can silence)
+LOG_FILE=/var/log/awacs.log
+LOG_CAP=1500         # rotation keeps this many lines
+# State lives in a PRIVATE root-owned dir, not bare /tmp: in shared /tmp (and /var/lock)
+# any local user could pre-create/squat these names and root would write through them —
+# /run/awacs (0700, root) closes squatting AND the lock-squat availability hole.
+# (The five files under it are DERIVED after the conf is sourced, so a conf that
+# moves RUN_DIR moves everything with it — a half-applied override once left the
+# lock at the default path and the daemon silently never started.)
+RUN_DIR=/run/awacs
+SCAN_TTL=30          # scans hit the radio (off-channel) — cache and throttle them
+SPOOL_CAP=60         # outage-story depth (aasw kept 500; 60 covers a long fight's tail)
+STREAM_MIN_KBPS=50   # live-stream STARVING floor: below this the stream itself is the
+                     # (free) meter saying the link suffers — evaluation becomes allowed
 
-# Security Features
-STEALTH_MODE="no"
-
-# System Mode Settings
-DEBUG_MODE="no"
-TEST_MODE="no"
-SYSTEM_BOOTING=true
-
-# ========================================
-# ADAPTIVE SPEED MODE CONFIGURATION
-# ========================================
-
-# Speed Mode Selection - يتوازن بين السرعة والاستقرار
-# "conservative" = مستقر لكن بطيء (155 ثانية)
-# "balanced" = متوازن (90 ثانية) - DEFAULT
-# "fast" = سريع لكن أقل استقرار (60 ثانية)
-SPEED_MODE="balanced"
-
-# ========================================
-# ADVANCED HARDWARE & NETWORK SETTINGS
-# ========================================
-
-# Hardware Configuration
-HARDWARE_CHECK="yes"
-MULTI_INTERFACE="yes"
-READ_ONLY_WPA="yes"
-
-# Network Management Limits
-MAX_NETWORK_SIZE=30
-MAX_TEMP_NETWORKS=15
-
-# Speed Thresholds
-SPEED_THRESHOLD=1.5
-NEVER_BREAK_THRESHOLD=1.2
-
-# ========================================
-# RUNTIME STATE VARIABLES
-# ========================================
-
-# WiFi Interface and Connection State
-WIFI_INTERFACE=""
-INTERNET_CONNECTED=false
-LAST_SUCCESSFUL_SSID=""
-
-# Caching for Performance
-CURRENT_SSID_CACHE=""
-CURRENT_SSID_CACHE_TIME=0
-CACHE_VALIDITY_SECONDS=3
-LAST_SCAN_TIME=0
-
-# Adaptive Algorithm Variables
-CONSECUTIVE_STABLE_CONNECTIONS=0
-ADAPTIVE_SCAN_INTERVAL=$SCAN_INTERVAL
-MIN_SCAN_INTERVAL=15
-MAX_SCAN_INTERVAL=120
-
-# Debug and Logging State
-# (CURRENT_DEBUG_LOG removed as unused)
-
-# ========================================
-# NETWORK ARRAYS & COMPLEX CONFIGURATIONS
-# ========================================
-
-# Emergency Networks Configuration
-USE_SAFETY_NET="yes"
-declare -A SAFETY_NET=(
-    # ["SSID"]="PASSWORD"    # أضف شبكات الطوارئ هنا
-)
-
-# DNS Servers Configuration - إصلاح مشكلة DNS hijacking
-PRIMARY_DNS_SERVERS=(
-    "8.8.8.8"
-    "1.1.1.1" 
-    "208.67.222.222"
-)
-
-FALLBACK_DNS_SERVERS=(
-    "9.9.9.9"
-    "77.88.8.8"
-    "8.26.56.26"
-)
-
-# Speed Test Servers - محسّنة مع خوادم إضافية
-SPEED_TEST_METHOD="auto"
-SPEEDTEST_SERVERS=(
-    "https://speed.cloudflare.com/__down?bytes=500000"
-    "http://speedtest.ftp.otenet.gr/files/test100k.db"
-    "https://speedtest.ae.rt.ru/upload"
-    "http://speedtest.wdc01.softlayer.com/downloads/test10.zip"
-    "https://proof.ovh.net/files/1Mb.dat"
-)
-
-# Network Scoring Configuration
-declare -A SCORE_WEIGHTS=(
-    ["speed"]=70
-    ["signal"]=20
-    ["priority"]=10
-)
-
-# ========================================
-# ALGORITHM STATE VARIABLES
-# ========================================
-
-# Speed Fluctuation Tracking
-LOW_SPEED_COUNT=0
-LOW_SPEED_THRESHOLD=3
-
-# ========================================
-# COMMAND LINE PROCESSING - معالجة سطر الأوامر
-# ========================================
-
-# Default command line state | حالة سطر الأوامر الافتراضية
-DAEMON_MODE=false
-VERBOSE=true
-
-# Parse command line arguments | تحليل معلمات سطر الأوامر
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        # System Control Options | خيارات تحكم النظام
-        -d|--daemon)
-            DAEMON_MODE=true
-            shift
-            ;;
-        -v|--verbose)
-            VERBOSE=true
-            shift
-            ;;
-        -q|--quiet)
-            VERBOSE=false
-            shift
-            ;;
-            
-        # Performance Mode Options | خيارات وضع الأداء
-        --performance|--fast)
-            SPEED_MODE="fast"
-            shift
-            ;;
-        --balanced)
-            SPEED_MODE="balanced"
-            shift
-            ;;
-        --stability|--conservative)
-            SPEED_MODE="conservative"
-            shift
-            ;;
-            
-        # Language Options | خيارات اللغة
-        --lang-en)
-            LANGUAGE="en"
-            shift
-            ;;
-        --lang-ar)
-            LANGUAGE="ar"
-            shift
-            ;;
-        --lang-both)
-            LANGUAGE="both"
-            shift
-            ;;
-            
-        # Logging Options | خيارات التسجيل
-        --log-local)
-            LOG_MODE="local"
-            shift
-            ;;
-        --log-remote)
-            LOG_MODE="remote"
-            REMOTE_LOGGING="yes"
-            shift
-            ;;
-        --log-both)
-            LOG_MODE="both"
-            REMOTE_LOGGING="yes"
-            shift
-            ;;
-        --log-none)
-            LOG_MODE="none"
-            shift
-            ;;
-            
-        *)
-            break
-            ;;
-    esac
-done
-
-# دالة تكوين إعدادات السرعة والاستقرار
-configure_speed_mode() {
-    case "$SPEED_MODE" in
-        "fast")
-            # سريع - 60 ثانية للريبوت (أقل استقرار)
-            CHECK_INTERVAL=3
-            SWITCH_TIMEOUT=2
-            MAX_FAILURES=2
-            SCAN_INTERVAL=10
-            PRE_SCAN_SLEEP=1
-            CONSERVE_RESOURCES="no"
-            # سيتم إعلام المستخدم لاحقاً في main()
-            ;;
-        "balanced")
-            # متوازن - 90 ثانية للريبوت (توازن جيد)
-            CHECK_INTERVAL=4
-            SWITCH_TIMEOUT=3
-            MAX_FAILURES=2
-            SCAN_INTERVAL=20
-            PRE_SCAN_SLEEP=1
-            CONSERVE_RESOURCES="yes"
-            # سيتم إعلام المستخدم لاحقاً في main()
-            ;;
-        "conservative")
-            # محافظ - 155 ثانية للريبوت (أقصى استقرار)
-            CHECK_INTERVAL=5
-            SWITCH_TIMEOUT=4
-            MAX_FAILURES=3
-            SCAN_INTERVAL=30
-            PRE_SCAN_SLEEP=2
-            CONSERVE_RESOURCES="yes"
-            # سيتم إعلام المستخدم لاحقاً في main()
-            ;;
-        *)
-            # سيتم التحذير لاحقاً في main()
-            SPEED_MODE="balanced"
-            # Note: Will reconfigure with balanced mode (no recursion)
-            ;;
-    esac
-}
-
-# تأكد من وجود المجلد المؤقت
-mkdir -p "$TEMP_WIFI_DIR"
-
-# تكوين إعدادات السرعة
-configure_speed_mode
-
-# ========================================
-# CONFIGURATION VALIDATION - التحقق من صحة التكوين
-# ========================================
-
-validate_configuration() {
-    local errors=()
-    local warnings=()
-    
-    log_message "DEBUG" "Starting configuration validation" "بدء التحقق من صحة التكوين"
-    
-    # التحقق من SPEED_MODE
-    if [[ ! "$SPEED_MODE" =~ ^(fast|balanced|conservative)$ ]]; then
-        errors+=("Invalid SPEED_MODE: '$SPEED_MODE'. Must be: fast, balanced, or conservative")
-        SPEED_MODE="balanced"
-        warnings+=("SPEED_MODE reset to 'balanced'")
-    fi
-    
-    # التحقق من LANGUAGE
-    if [[ ! "$LANGUAGE" =~ ^(en|ar|both)$ ]]; then
-        errors+=("Invalid LANGUAGE: '$LANGUAGE'. Must be: en, ar, or both")
-        LANGUAGE="both"
-        warnings+=("LANGUAGE reset to 'both'")
-    fi
-    
-    # التحقق من LOG_MODE
-    if [[ ! "$LOG_MODE" =~ ^(local|remote|both|none)$ ]]; then
-        errors+=("Invalid LOG_MODE: '$LOG_MODE'. Must be: local, remote, both, or none")
-        LOG_MODE="local"
-        warnings+=("LOG_MODE reset to 'local'")
-    fi
-    
-    # التحقق من CHECK_INTERVAL
-    if ! [[ "$CHECK_INTERVAL" =~ ^[0-9]+$ ]] || ((CHECK_INTERVAL < 1 || CHECK_INTERVAL > 300)); then
-        errors+=("Invalid CHECK_INTERVAL: '$CHECK_INTERVAL'. Must be between 1-300 seconds")
-        CHECK_INTERVAL=5
-        warnings+=("CHECK_INTERVAL reset to 5")
-    fi
-    
-    # التحقق من SWITCH_TIMEOUT
-    if ! [[ "$SWITCH_TIMEOUT" =~ ^[0-9]+$ ]] || ((SWITCH_TIMEOUT < 1 || SWITCH_TIMEOUT > 30)); then
-        errors+=("Invalid SWITCH_TIMEOUT: '$SWITCH_TIMEOUT'. Must be between 1-30 seconds")
-        SWITCH_TIMEOUT=4
-        warnings+=("SWITCH_TIMEOUT reset to 4")
-    fi
-    
-    # التحقق من MAX_FAILURES
-    if ! [[ "$MAX_FAILURES" =~ ^[0-9]+$ ]] || ((MAX_FAILURES < 1 || MAX_FAILURES > 10)); then
-        errors+=("Invalid MAX_FAILURES: '$MAX_FAILURES'. Must be between 1-10")
-        MAX_FAILURES=3
-        warnings+=("MAX_FAILURES reset to 3")
-    fi
-    
-    # التحقق من DEVICE_ID
-    if [[ -z "$DEVICE_ID" || ${#DEVICE_ID} -lt 3 || ${#DEVICE_ID} -gt 32 ]]; then
-        errors+=("Invalid DEVICE_ID: '$DEVICE_ID'. Must be 3-32 characters")
-        DEVICE_ID="AWACS-$(date +%s | tail -c 4)"
-        warnings+=("DEVICE_ID reset to '$DEVICE_ID'")
-    fi
-    
-    # التحقق من PRIMARY_DNS_SERVERS
-    if [[ ${#PRIMARY_DNS_SERVERS[@]} -eq 0 ]]; then
-        errors+=("No PRIMARY_DNS_SERVERS defined")
-        PRIMARY_DNS_SERVERS=("8.8.8.8" "1.1.1.1")
-        warnings+=("PRIMARY_DNS_SERVERS set to default Google/Cloudflare DNS")
+# --- Isolation: the settings file. Sourced as ROOT, so it must BE root's:
+# refuse a conf not owned by us or writable by group/others (a loose conf = a backdoor).
+AWACS_CONF="${AWACS_CONF:-/etc/awacs.conf}"
+# EUID gate: the rootless fast lanes (check/help) run on DEFAULTS by design — and
+# [[ -O ]] tests the RUNNER's uid, so without this gate a rootless run would falsely
+# accuse a correctly root-owned conf ("chown root: it") in every cron mail.
+if [[ -f $AWACS_CONF ]] && (( EUID == 0 )); then
+  if [[ -O $AWACS_CONF ]]; then
+    _cp=$(stat -c '%a' "$AWACS_CONF" 2>/dev/null || echo 777)
+    # 066 mask: no WRITE and no READ for group/others — the conf carries hotspot
+    # PASSWORDS, so a world-readable 644 is as much a leak as a writable one.
+    if (( (8#$_cp & 8#066) == 0 )); then
+      # shellcheck source=/dev/null
+      source "$AWACS_CONF"
     else
-        for dns in "${PRIMARY_DNS_SERVERS[@]}"; do
-            if ! [[ "$dns" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-                errors+=("Invalid DNS server format: '$dns'")
-            else
-                # التحقق من صحة كل جزء من IP
-                local IFS='.'
-                local ip_parts=($dns)
-                for part in "${ip_parts[@]}"; do
-                    if ((part < 0 || part > 255)); then
-                        errors+=("Invalid DNS server IP range: '$dns'")
-                        break
-                    fi
-                done
-            fi
-        done
+      printf 'awacs: IGNORING %s (group/world can access it — chmod 600 it)\n' "$AWACS_CONF" >&2
     fi
-    
-    # التحقق من REMOTE_URL إذا كان التسجيل البعيد مفعل
-    if [[ "$LOG_MODE" =~ (remote|both) || "$REMOTE_LOGGING" == "yes" ]]; then
-        if [[ -z "$REMOTE_URL" ]]; then
-            errors+=("REMOTE_URL is required when remote logging is enabled")
-            LOG_MODE="local"
-            REMOTE_LOGGING="no"
-            warnings+=("Remote logging disabled due to missing REMOTE_URL")
-        elif ! [[ "$REMOTE_URL" =~ ^https?:// ]]; then
-            errors+=("Invalid REMOTE_URL format: '$REMOTE_URL'. Must start with http:// or https://")
-            LOG_MODE="local"
-            REMOTE_LOGGING="no"
-            warnings+=("Remote logging disabled due to invalid REMOTE_URL")
-        fi
-    fi
-    
-    # التحقق من ملفات وأدلة النظام
-    if [[ ! -d "$WORK_DIR" ]]; then
-        if ! mkdir -p "$WORK_DIR" 2>/dev/null; then
-            errors+=("Cannot create work directory: '$WORK_DIR'")
-        fi
-    fi
-    
-    if [[ ! -w "$WORK_DIR" ]]; then
-        errors+=("Work directory not writable: '$WORK_DIR'")
-    fi
-    
-    # التحقق من الأدوات المطلوبة
-    local required_tools=("iwconfig" "iwlist" "wpa_cli" "ping" "curl")
-    for tool in "${required_tools[@]}"; do
-        if ! command -v "$tool" &>/dev/null; then
-            errors+=("Required tool missing: '$tool'")
-        fi
-    done
-    
-    # التحقق من صلاحيات sudo
-    if ! sudo -n true 2>/dev/null; then
-        warnings+=("sudo access may be required for some operations")
-    fi
-    
-    # طباعة النتائج
-    if [[ ${#errors[@]} -gt 0 ]]; then
-        log_message "ERROR" "Configuration validation failed with ${#errors[@]} errors:" "فشل التحقق من التكوين مع ${#errors[@]} أخطاء:"
-        for error in "${errors[@]}"; do
-            log_message "ERROR" "  - $error" "  - $error"
-        done
-    fi
-    
-    if [[ ${#warnings[@]} -gt 0 ]]; then
-        log_message "WARN" "Configuration validation found ${#warnings[@]} warnings:" "التحقق من التكوين وجد ${#warnings[@]} تحذيرات:"
-        for warning in "${warnings[@]}"; do
-            log_message "WARN" "  - $warning" "  - $warning"
-        done
-    fi
-    
-    if [[ ${#errors[@]} -eq 0 && ${#warnings[@]} -eq 0 ]]; then
-        log_message "SUCCESS" "Configuration validation passed" "نجح التحقق من صحة التكوين"
-        return 0
-    elif [[ ${#errors[@]} -eq 0 ]]; then
-        log_message "INFO" "Configuration validation completed with warnings only" "اكتمل التحقق من التكوين مع تحذيرات فقط"
-        return 0
-    else
-        log_message "ERROR" "Configuration validation failed" "فشل التحقق من صحة التكوين"
-        return 1
-    fi
-}
-
-# ملاحظة: سيتم تشغيل التحقق من صحة التكوين في الدالة الرئيسية
-# validate_configuration سيتم استدعاؤها بعد تعريف log_message
-
-# تشغيل في الخلفية إذا كان مطلوباً
-if $DAEMON_MODE; then
-    echo $$ > "$PIDFILE"
-    exec 1>> "$LOG_FILE" 2>&1
-    
-    if [ -z "$ALREADY_DAEMONIZED" ]; then
-        export ALREADY_DAEMONIZED=true
-        exec setsid "$0" "$@" &
-        exit 0
-    fi
+    unset _cp
+  else
+    # Refusal must never be SILENT — a wrong-owner conf (restored from a backup as
+    # pi) would otherwise just... stop applying, with nobody the wiser.
+    printf 'awacs: IGNORING %s (not owned by root — chown root: it)\n' "$AWACS_CONF" >&2
+  fi
 fi
+# A hand-edited conf can hold typos; a bad NUMBER inside (( )) would crash the daemon
+# into a silent respawn loop — validate every numeric knob, fall back to sane defaults.
+for _kv in TICK=10 NET_FAIL_TICKS=3 ASSOC_WAIT=25 PROBE_KB=200 MIN_UP_KBPS=400 \
+           UP_STRIKES=3 SWITCH_GAIN_PCT=150 DANCE_COOLDOWN=1200 PREF_CHECK=600 \
+           REBOOT_AFTER_MIN=30 NIGHT_MIN_UP_KBPS=200 NIGHT_GAIN_PCT=300 \
+           NIGHT_DANCE_COOLDOWN=2400 LOG_CAP=1500 SPOOL_CAP=60 SCAN_TTL=30 \
+           STREAM_MIN_KBPS=50; do
+  _k=${_kv%%=*}
+  # :- guard: a conf that UNSETS a knob must fall back, not die unbound pre-logging.
+  # 10# normalize: 08/09 pass the digits regex but are octal-illegal at every bare
+  # (( )) site — proven to silently disable the fight; store the decimal value.
+  # NONZERO, max 7 significant digits: every legitimate knob fits; 0 is nonsense
+  # for ALL of them (TICK=0 hot-spins the loop, SPOOL_CAP=0 breaks the head-pin
+  # math) and a 19-digit typo would 64-bit-wrap into a NEGATIVE sleep (hot-spin)
+  # or an eternal one (alive-but-asleep silent wedge).
+  if [[ ${!_k:-} =~ ^0*[1-9][0-9]{0,6}$ ]]; then printf -v "$_k" '%d' "$(( 10#${!_k} ))"
+  else eval "$_kv"; fi
+done
+unset _kv _k
+# The two clock knobs are HH:MM strings — a malformed one would crash apply_profile's
+# base-10 arithmetic every tick; validate the shape, fall back to the defaults.
+[[ ${NIGHT_START:-} =~ ^([01]?[0-9]|2[0-3]):[0-5][0-9]$ ]] || NIGHT_START="22:00"
+[[ ${NIGHT_END:-}   =~ ^([01]?[0-9]|2[0-3]):[0-5][0-9]$ ]] || NIGHT_END="06:00"
+# Reporting knobs: enums fall back, URLs must be plain http(s) (they land in curl argv),
+# a remote target without a site is downgraded to local — and SAID once in the log.
+case ${LOG_TARGET:-} in local|both|remote) ;; *) LOG_TARGET=local ;; esac
+case ${REPORT_WIFI:-} in auto|yes|no) ;; *) REPORT_WIFI=auto ;; esac
+case ${LOG_LANG:-}  in en|ar) ;; *) LOG_LANG=en ;; esac
+case ${SITE_LANG:-} in en|ar) ;; *) SITE_LANG=en ;; esac
+[[ ${SITE_URL:-}  =~ ^https?://[^[:space:]/]+(/[^[:space:]]*)?$ ]] || SITE_URL=""
+[[ ${PROBE_URL:-} =~ ^https?://[^[:space:]]+$ ]] || PROBE_URL=""
+[[ ${SITE_TZ:-}   =~ ^[A-Za-z0-9/_+-]{0,64}$ ]] || SITE_TZ=""
+[[ ${SITE_API:-}  =~ ^[A-Za-z0-9_][A-Za-z0-9_./-]{0,63}$ && ${SITE_API:-} != *..* ]] || SITE_API="receiver.php"
+LT_DOWNGRADED=0
+[[ -n $SITE_URL || $LOG_TARGET == local ]] || { LOG_TARGET=local; LT_DOWNGRADED=1; }
+# Derived AFTER the conf so a RUN_DIR override carries all five files with it.
+[[ ${RUN_DIR:-} == /* ]] || RUN_DIR=/run/awacs   # relative/empty override = nonsense
+LOCK=$RUN_DIR/lock          # flock authority; also stores the daemon PID (display-only)
+SCAN_CACHE=$RUN_DIR/scan
+SCAN_EMPTY=$RUN_DIR/scan.empty  # consecutive fresh scans that heard NOTHING (deaf-radio tell)
+SCAN_DEAF=3                     # that many in a row = the stale picture is dropped (not a knob)
+SPOOL=$RUN_DIR/spool        # site-log lines the outage swallowed; drained after proven health
+OPEN_ID_FILE=$RUN_DIR/open_id  # crash-proof crutch marker: a respawn reaps its predecessor's
+PROBE_FILE=$RUN_DIR/probe      # wget fallback needs a real file to POST
+readonly VERSION TICK NET_FAIL_TICKS ASSOC_WAIT PROBE_KB MIN_UP_KBPS UP_STRIKES \
+         SWITCH_GAIN_PCT DANCE_COOLDOWN PREF_CHECK REBOOT_AFTER_MIN OPEN_NETWORKS \
+         NIGHT_MODE NIGHT_START NIGHT_END NIGHT_MIN_UP_KBPS NIGHT_GAIN_PCT \
+         NIGHT_DANCE_COOLDOWN STEALTH_MODE DEBUG LOG_FILE LOG_CAP RUN_DIR LOCK \
+         SCAN_CACHE SCAN_EMPTY SCAN_DEAF SCAN_TTL SPOOL SPOOL_CAP OPEN_ID_FILE PROBE_FILE SAFETY_NET \
+         STREAM_MIN_KBPS SITE_URL LOG_TARGET PROBE_URL REPORT_WIFI SITE_TZ SITE_API \
+         LOG_LANG SITE_LANG
+# Outage-verdict patience (internal, sealed after the conf so no typo can reach them).
+# A loaded uplink answers LATE, not never: a saturated upload on a slow hotspot holds
+# ICMP and small HTTP replies past the quick ladder's 2-3 s. NET_ALIVE_BYTES: bytes the
+# device ITSELF SENT while the quick ladder was failing (7-10 s) - about 13-19 kbps, far
+# above the ladder's own packets (under 4 KB) and untouched by incoming LAN chatter; an
+# upload's ACK stream alone clears it. Only then is a failed quick check excused by one
+# patient look: 3 pings 0.3 s apart per target (a bloated queue drops single packets).
+readonly NET_PATIENT_PING_W=5 NET_PATIENT_HTTP=8 NET_PATIENT_PINGS=3 NET_ALIVE_BYTES=16384
+FIGHT_STREAK=0   # fights entered since the last healthy tick (the loop and the boot path count)
+PATIENT_FAILED=0 # a patient look already failed in this streak - never pay for it twice
 
-# التحقق المبدئي من الصلاحيات
-if [[ $EUID -ne 0 ]]; then
+# Day/night mutables (apply_profile switches them; consumers read only CUR_*)
+CUR_MIN_UP=$MIN_UP_KBPS
+CUR_GAIN=$SWITCH_GAIN_PCT
+CUR_COOLDOWN=$DANCE_COOLDOWN
+PROFILE=""
+
+# ------------------------------- identity -------------------------------------
+require_root() {
+  (( EUID == 0 )) && return 0
+  # The terminal box below is kept exactly as it is: its spacing is tuned for real
+  # Arabic+emoji terminal rendering, so do not reflow it.
     echo
     echo -e "\033[1;37m┌─────────────────────────────────────────────┐\033[0m"
     echo -e "\033[1;37m│\033[1;41m ROOT ACCESS REQUIRED | مطلوب صلاحيات الجذر  \033[0;37m│\033[0m"
@@ -665,47 +204,1932 @@ if [[ $EUID -ne 0 ]]; then
     echo -e "\033[1;37m│ \033[1;32m✓  \033[0mRun: \033[1;36msudo bash $0\033[1;37m    │\033[0m"
     echo -e "\033[1;37m└─────────────────────────────────────────────┘\033[0m"
     echo
-    exit 1
+  exit 1
+}
+device_id() {  # resolved LAZILY: a boot script may write /tmp/device_id AFTER we launch.
+  # grep -m1 .: an empty or blank-first-line file falls through to the hostname.
+  # VALIDATED before use: the file lives in world-writable /tmp and its bytes land in
+  # a root terminal and an outbound URL — only a plain slug passes.
+  local d
+  d="${DEVICE_ID:-$(grep -m1 . /tmp/device_id 2>/dev/null)}"
+  [[ $d =~ ^[A-Za-z0-9_-]{1,32}$ ]] || d=$(hostname -s 2>/dev/null)
+  [[ $d =~ ^[A-Za-z0-9_-]{1,32}$ ]] || d=device
+  echo "$d"
+}
+site()      { echo "${SITE_URL%/}/$(device_id)"; }   # meaningful only when SITE_URL is set
+api_url()   { echo "$(site)/${SITE_API}"; }          # the endpoint every site request targets
+remote_on() { [[ -n $SITE_URL && $LOG_TARGET != local ]]; }   # story lines + Wi-Fi cell go to the site
+probe_url() {  # where upload probes POST to; empty = no measurement possible (signal mode)
+  if [[ -n $PROBE_URL ]]; then echo "$PROBE_URL"
+  elif [[ -n $SITE_URL ]]; then api_url; fi
+}
+probe_on()  { [[ -n $PROBE_URL || -n $SITE_URL ]]; }
+# SIGNAL MODE (probe_on false): the measured-upload law has nothing to measure with, so
+# the daemon is a connectivity supervisor only — fight when the internet is lost (the
+# strongest visible known network that delivers wins), go home when home is visible;
+# no QA strikes, no dance, no "too slow" veto. The story lines say so instead of "0 kbps".
+up_words()    { if probe_on; then echo "upload $1 kbps"; else echo "signal mode"; fi; }
+up_words_ar() { if probe_on; then echo "رفع $1 كيلوبت/ث"; else echo "وضع الإشارة"; fi; }
+stamp()     { if [[ -n $SITE_TZ ]]; then TZ=$SITE_TZ date "$@"; else date "$@"; fi; }
+
+detect_if() {  # aasw's best-interface ladder: connected > up > present; env AWACS_IF overrides
+  local best="" state=0 i s
+  for i in $(iw dev 2>/dev/null | awk '$1 == "Interface" { print $2 }'); do
+    s=0
+    ip link show "$i" 2>/dev/null | grep -q ' UP' && s=1
+    (( s == 1 )) && iw dev "$i" link 2>/dev/null | grep -q '^Connected' && s=2
+    (( s == 2 )) && { best=$i; break; }   # never steal an associated radio — it wins outright
+    (( s > state )) && { best=$i; state=$s; }
+    [[ -z $best ]] && best=$i
+  done
+  [[ -n $best ]] && iw dev "$best" info >/dev/null 2>&1 || best=wlan0
+  printf '%s' "$best"
+}
+
+# ------------------------------- logging --------------------------------------
+log() {  # LEVEL MSG — local file, rotated; never blocks on the network
+  printf '[%s][%s] %s\n' "$1" "$(date '+%d/%m %H:%M:%S')" "$2" >>"$LOG_FILE" 2>/dev/null || :
+  local n; n=$(wc -l <"$LOG_FILE" 2>/dev/null || echo 0)
+  if (( n > LOG_CAP + 200 )); then
+    tail -n "$LOG_CAP" "$LOG_FILE" >"${LOG_FILE}.t" 2>/dev/null && mv -f "${LOG_FILE}.t" "$LOG_FILE"
+  fi
+}
+dbg() { [[ $DEBUG == yes ]] && log DEBUG "$1"; return 0; }  # return 0: a false && must never trip callers
+
+net_up=0  # last verdict; connect_id/fight set it the moment internet is verified
+llog() {  # LEVEL EN_MSG AR_MSG — a LOCAL-ONLY story line in the language LOG_LANG asks for
+  if [[ $LOG_LANG == ar ]]; then log "$1" "$3"; else log "$1" "$2"; fi
+}
+
+site_log() {  # LEVEL EN_MSG [AR_MSG] — one story line, two audiences: the local file in
+  # LOG_LANG and the site in SITE_LANG (a line with no Arabic text falls back to English).
+  # A failed live send self-spools; offline lines spool directly — the outage's own story
+  # reaches the site after recovery, in order, nothing lost.
+  # LOG_TARGET=remote: the local file keeps only the alarming levels (WARN/ERROR)
+  local en=$2 ar=${3:-$2} local_txt site_txt
+  if [[ $LOG_LANG == ar ]]; then local_txt=$ar; else local_txt=$en; fi
+  if [[ $SITE_LANG == ar ]]; then site_txt=$ar; else site_txt=$en; fi
+  if [[ $LOG_TARGET != remote || $1 == WARN || $1 == ERROR ]]; then log "$1" "$local_txt"; fi
+  remote_on || return 0   # local-only deployment: the story stays in the local log
+  local line
+  line="[$1] AWACS: ${site_txt}, $(stamp '+%d/%m/%Y %I:%M:%S %p')."
+  if (( net_up )); then
+    # Group-level >/dev/null: the async child must not inherit a caller's command-
+    # substitution pipe, or $(scan) waits up to 4s for this sender to exit (proven).
+    { curl -sf --max-time 4 --data-urlencode "file=log/log.txt" \
+        --data-urlencode "data=$line" "$(api_url)" \
+      || printf '%s\n' "$line" >>"$SPOOL"; } >/dev/null 2>&1 9>&- &
+  else
+    printf '%s\n' "$line" >>"$SPOOL" 2>/dev/null || :
+    local _n; _n=$(wc -l <"$SPOOL" 2>/dev/null || echo 0)
+    if (( _n > SPOOL_CAP )); then
+      # PIN line 1: the outage's opening banner carries the "when it began" stamp —
+      # a capped story keeps its head AND its newest tail (middle chatter is what
+      # rolls off). head+tail can never duplicate: tail starts at line 3 or later.
+      { head -n 1 "$SPOOL"; tail -n $(( SPOOL_CAP - 1 )) "$SPOOL"; } >"${SPOOL}.t" 2>/dev/null \
+        && mv -f "${SPOOL}.t" "$SPOOL"
+    fi
+  fi
+}
+
+flush_spool() {  # deliver the outage story in order, duplicate-proof: SNAPSHOT via
+  # atomic mv (async appenders start a fresh spool untouched), count what was sent,
+  # merge only the UNSENT remainder back IN FRONT of new lines, capped. Honest limit:
+  # an append landing in the final merge instant can be lost — one log line, accepted;
+  # a lock here would let a hung flush block the fight, and reachability outranks logs.
+  remote_on || return 0
+  [[ -s $SPOOL ]] || return 0
+  mv -f "$SPOOL" "${SPOOL}.sending" 2>/dev/null || return 0
+  local l sent=0
+  while IFS= read -r l; do
+    if curl -sf --max-time 4 --data-urlencode "file=log/log.txt" \
+         --data-urlencode "data=$l" "$(api_url)" >/dev/null 2>&1; then
+      (( ++sent ))
+    else
+      break
+    fi
+  done <"${SPOOL}.sending"
+  { tail -n +$(( sent + 1 )) "${SPOOL}.sending" 2>/dev/null; cat "$SPOOL" 2>/dev/null; } >"${SPOOL}.t" || :
+  if [[ -s ${SPOOL}.t ]]; then
+    local n; n=$(wc -l <"${SPOOL}.t" 2>/dev/null || echo 0)
+    if (( n > SPOOL_CAP )); then  # same head-pin as site_log's cap: keep the opening line
+      { head -n 1 "${SPOOL}.t"; tail -n $(( SPOOL_CAP - 1 )) "${SPOOL}.t"; } >"$SPOOL" 2>/dev/null || :
+    else
+      cat "${SPOOL}.t" >"$SPOOL" 2>/dev/null || :
+    fi
+  fi
+  rm -f "${SPOOL}.sending" "${SPOOL}.t"
+}
+
+MISSING_TOOLS=""
+APT_TRIED=0
+check_tools() {  # inventory only — the INSTALL attempt is install_tools(), which the
+  # main loop fires once per boot at the first PROVEN-healthy moment (apt needs net).
+  local t missing="" tools
+  local IFS=' '   # the lists below are SPACE-separated; the global IFS=\n\t would
+                  # hand the loop ONE giant token (proven: every boot false-alarmed
+                  # "missing tools" and the installer never saw a real tool name)
+  # Backend-aware inventory: the nm image needs nmcli, not wpa_cli (and vice versa).
+  if [[ $BACKEND != wpa ]]; then
+    tools="iw nmcli ip ping curl awk sed grep pgrep rfkill flock timeout stat date modprobe"
+  else
+    tools="iw wpa_cli ip ping curl awk sed grep pgrep rfkill flock timeout stat date modprobe"
+  fi
+  for t in $tools; do
+    command -v "$t" >/dev/null 2>&1 || missing+="$t "
+  done
+  MISSING_TOOLS=$missing
+  [[ -n $missing ]] && site_log ERROR "missing tools: ${missing}- will try to install once online" \
+                                      "أدوات ناقصة بالنظام: ${missing}- سيتم تنزيلها تلقائياً عند توفر النت"
+  return 0
+}
+
+install_tools() {  # DESIGN DECISION (reverses the old report-only stance for
+  # AWACS's OWN tools): ONE bounded apt attempt per boot, in the BACKGROUND (the
+  # fight never waits on apt), with the CORRECT package names — the old aasw used
+  # tool names as package names and its exec-restart suicided on its own lock;
+  # neither mistake exists here (tools appear in PATH the moment apt finishes).
+  [[ -n $MISSING_TOOLS && ! -e $RUN_DIR/apt_tried ]] || return 0
+  (( APT_TRIED )) && return 0   # in-process belt: once-per-boot holds even if the
+  APT_TRIED=1                   # marker write below ever fails
+  { : >"$RUN_DIR/apt_tried"; } 2>/dev/null || :   # suppressor installed FIRST
+  command -v apt-get >/dev/null 2>&1 \
+    || { site_log WARN "no apt-get on this system - install manually: ${MISSING_TOOLS}" \
+                       "لا يوجد apt-get - تحتاج تثبيت يدوي: ${MISSING_TOOLS}"; return 0; }
+  local t pkgs=()
+  local IFS=' '   # MISSING_TOOLS is space-separated (same trap as check_tools)
+  for t in $MISSING_TOOLS; do
+    case $t in                       # tool -> Debian package (NOT always the same word)
+      wpa_cli)           pkgs+=(wpasupplicant) ;;
+      nmcli)             pkgs+=(network-manager) ;;
+      ip)                pkgs+=(iproute2) ;;
+      ping)              pkgs+=(iputils-ping) ;;
+      awk)               pkgs+=(mawk) ;;
+      pgrep)             pkgs+=(procps) ;;
+      flock)             pkgs+=(util-linux) ;;
+      timeout|stat|date) pkgs+=(coreutils) ;;
+      modprobe)          pkgs+=(kmod) ;;
+      *)                 pkgs+=("$t") ;;
+    esac
+  done
+  site_log INFO "installing missing tools: ${pkgs[*]}" \
+                "جاري تنزيل الأدوات الناقصة تلقائياً: ${pkgs[*]}"
+  # nmcli missing while NetworkManager itself is present = a CORRUPTED package: a
+  # plain install is a no-op ("already newest") — force --reinstall in that case.
+  local -a aptflags=(install -y)
+  [[ " $MISSING_TOOLS " == *" nmcli "* ]] && aptflags=(install -y --reinstall)
+  local missing_snapshot=$MISSING_TOOLS still=""
+  { DEBIAN_FRONTEND=noninteractive timeout 600 apt-get "${aptflags[@]}" "${pkgs[@]}" >/dev/null 2>&1 || :
+    # Success is judged by the TOOLS appearing, never by apt's exit code (an
+    # already-installed package exits 0 while the binary is still absent).
+    IFS=' '   # (subshell copy — the function's space IFS, restated for the reader)
+    for t in $missing_snapshot; do command -v "$t" >/dev/null 2>&1 || still+="$t "; done
+    if [[ -z $still ]]; then
+      site_log OK "tools installed: ${pkgs[*]}" "اكتمل تنزيل الأدوات الناقصة"
+    else
+      site_log ERROR "tool install failed - still missing: ${still}- install manually" \
+                     "فشل تنزيل الأدوات - ما زالت ناقصة: ${still}- تحتاج تثبيت يدوي"
+    fi; } 9>&- &
+}
+
+# ------------------------------- probes ----------------------------------------
+wpa() { wpa_cli -i "$IF" "$@" 2>/dev/null; }
+
+assoc_ssid() {  # current SSID via iw (iwgetid is extinct on new images) — display only
+  iw dev "$IF" link 2>/dev/null | sed -n 's/^[[:space:]]*SSID: //p' | head -1
+}
+pssid() {  # DISPLAY form of any escaped SSID: %b decodes iw's \xNN so Arabic names
+  # read as Arabic — then every CONTROL byte is stripped, because a neighbor can name
+  # an AP with \x1b escape codes and %b would inject them into the root terminal/log.
+  # NEVER used for matching — display only.
+  printf '%b' "$1" | tr -d '\000-\037\177'
+}
+dssid() { pssid "$(assoc_ssid)"; }
+
+net_check() {  # $1 = ping wait (s), $2 = HTTP limit (s), $3 = pings per target: the ladder, ANY rung passing = online;
+  # TWO http rungs, both exact: gstatic must answer 204, our own endpoint must answer
+  # 400. Known accepted blind spot: ping-alive-but-DNS-dead reads ONLINE (aasw's ladder
+  # had the same short-circuit) — the device's own watchdog owns that story.
+  ping -c "$3" -i 0.3 -W "$1" 8.8.8.8 >/dev/null 2>&1 && return 0   # any reply = exit 0
+  ping -c "$3" -i 0.3 -W "$1" 1.1.1.1 >/dev/null 2>&1 && return 0
+  # portal's 302/200 splash must read as OFFLINE or the fight ends on fake victory.
+  [[ $(curl -s -o /dev/null -w '%{http_code}' --max-time "$2" \
+       "http://connectivitycheck.gstatic.com/generate_204" 2>/dev/null) == "204" ]] && return 0
+  # Last rung — OUR OWN API answering its SIGNATURE reply: the endpoint returns
+  # 400 "no operation" by contract, a code no captive-portal splash fabricates
+  # (portals answer 200/302/511). This rescues the ICMP-eaten/204-mangled carrier
+  # network WITHOUT the false victory a bare any-status probe would hand a portal.
+  [[ -n $SITE_URL ]] || return 1   # no site configured = this rung does not exist
+  [[ $(curl -s -o /dev/null -w '%{http_code}' --max-time "$2" \
+       --data-urlencode "probe=1" "$(api_url)" 2>/dev/null) == "400" ]]
+}
+have_net()    { net_check 2 3 1; }   # the QUICK ladder: one tick's cheap question (unchanged cost)
+net_patient() { net_check "$NET_PATIENT_PING_W" "$NET_PATIENT_HTTP" "$NET_PATIENT_PINGS"; }   # the second look
+tx_now() {  # $1 = variable name <- TX bytes the interface has sent (builtin read, no fork;
+  # 0 when the netdev is gone or reborn, so a vanished interface reads as no traffic)
+  local v=0
+  read -r v <"/sys/class/net/$IF/statistics/tx_bytes" 2>/dev/null || v=0
+  [[ $v =~ ^[0-9]+$ ]] || v=0
+  printf -v "$1" '%s' "$v"
+}
+net_verdict() {  # the daemon's own question, one tick: the quick ladder; a failure while the
+  # device itself kept sending (TX bytes across the failed ladder) earns ONE patient look,
+  # once per streak. A dead link sends nothing during the ladder, and a link whose patient
+  # look already failed is not asked again, so a real outage costs one patient look at most.
+  local a b sent=0
+  tx_now a
+  have_net && { PATIENT_FAILED=0; return 0; }
+  # Asked patiently once in this streak and got nothing? The answer does not change
+  # every ten seconds, and a real outage must not pay 26 s per tick to re-hear it.
+  (( PATIENT_FAILED )) && return 1
+  tx_now b; (( b > a )) && sent=$(( b - a ))
+  (( sent >= NET_ALIVE_BYTES )) || return 1
+  if net_patient; then dbg "quick check timed out under load (sent ${sent} B during it) - patient check passed"; return 0; fi
+  PATIENT_FAILED=1   # asked patiently and got nothing: the streak does not get a second bill
+  dbg "sent ${sent} B during the failed quick check, the patient check failed too - counting it"
+  return 1
+}
+net_ok() {  # the fight's credit sites: a heal under load must be CREDITED, not fought.
+  # Quick first; then a 2 s look at what the device sent (a dead candidate sends nothing:
+  # 2 s and out); only real outgoing traffic earns the patient ladder.
+  local a b
+  have_net && return 0
+  tx_now a; sleep 2; tx_now b
+  (( b > a && b - a >= NET_ALIVE_BYTES / 5 )) || return 1
+  net_patient && { dbg "quick check timed out under load (sent $(( b - a )) B in 2 s) - patient check passed"; return 0; }
+  return 1
+}
+link_alive() {  # read-only: the LINK to the router works, so an outage is upstream. The
+  # gateway's ping answer, or - under a load that delays even that - the kernel's neighbour
+  # cache saying REACHABLE (two-way traffic confirmed lately, no packet sent to ask).
+  local gw; gw=$(ip -4 route show default dev "$IF" 2>/dev/null | awk '{print $3; exit}')
+  [[ -n $gw ]] || return 1
+  ping -c 1 -W 2 "$gw" >/dev/null 2>&1 && return 0
+  ip -4 neigh show dev "$IF" "$gw" 2>/dev/null | grep -q REACHABLE
+}
+
+gw_ok() {  # gateway answers = the LINK is fine, the outage is upstream (ISP) — never reboot for that
+  local gw; gw=$(ip -4 route show default dev "$IF" 2>/dev/null | awk '{print $3; exit}')
+  [[ -n $gw ]] && ping -c 1 -W 2 "$gw" >/dev/null 2>&1
+}
+
+wpa_auth_failing() {  # wrong password ≠ wedge: the supplicant marks such networks TEMP-DISABLED.
+  wpa list_networks | grep -q 'TEMP-DISABLED'
+}
+
+up_kbps() {  # REAL UPLOAD speed to OUR OWN site — decision moments only. Target is
+  # the endpoint (tiny error reply), not a page: response time would deflate the number.
+  # No ||-clobber: on --max-time expiry curl still prints the honest partial average.
+  [[ -n ${AWACS_TEST_KBPS:-} ]] && { printf '%d' "$AWACS_TEST_KBPS"; return 0; }
+  local bps="" target; target=$(probe_url)
+  [[ -n $target ]] || { printf '0'; return 0; }   # nothing to upload to = no measurement
+  if command -v curl >/dev/null 2>&1; then
+    bps=$(head -c $((PROBE_KB * 1024)) /dev/zero \
+          | curl -s -o /dev/null -w '%{speed_upload}' --max-time 15 --data-binary @- \
+            "$target" 2>/dev/null)
+  fi
+  if [[ -z ${bps:-} || $bps == 0 || $bps == "0.000" ]]; then
+    command -v wget >/dev/null 2>&1 && { up_kbps_wget "$target"; return 0; }
+  fi
+  printf '%d' "$(awk -v b="${bps:-0}" 'BEGIN { printf "%d", b * 8 / 1000 }')"
+}
+
+up_kbps_wget() {  # measurement must survive one dead tool (aasw's method fallback)
+  local t0 t1 dt rc
+  head -c $((PROBE_KB * 1024)) /dev/zero >"$PROBE_FILE" 2>/dev/null || { printf '0'; return 0; }
+  t0=$(date +%s%N)
+  timeout 20 wget -q -O /dev/null -T 15 --post-file="$PROBE_FILE" "$1" 2>/dev/null
+  rc=$?
+  t1=$(date +%s%N)
+  rm -f "$PROBE_FILE"
+  # wget exit 8 = the server ANSWERED 4xx/5xx after the upload — our endpoint replies
+  # 400 'no operation' by design, so 8 is success-of-transport. Anything else (4=network,
+  # 124=timeout, ...) means the bytes never traveled: a fast failure must read as an
+  # honest 0, never as a lightning-fast upload (proven 1638-16000 kbps phantom).
+  (( rc != 0 && rc != 8 )) && { printf '0'; return 0; }
+  dt=$(( t1 - t0 ))
+  (( dt <= 0 )) && { printf '0'; return 0; }
+  printf '%d' $(( PROBE_KB * 1024 * 8 * 1000000 / dt ))  # bits * 1e6 / ns = kbps
+}
+
+tx_kbps() {  # passive upload meter from kernel counters — zero traffic, 3s sample
+  [[ -n ${AWACS_TEST_KBPS:-} ]] && { printf '%d' "$AWACS_TEST_KBPS"; return 0; }
+  local a b f=/sys/class/net/$IF/statistics/tx_bytes
+  a=$(cat "$f" 2>/dev/null || echo 0); sleep 3; b=$(cat "$f" 2>/dev/null || echo 0)
+  printf '%d' $(( (b - a) * 8 / 3000 ))
+}
+
+streaming() {  # REAL TRAFFIC is its own upload meter — never probe or dance under it.
+  # Four moments covered: a live web stream (live_raw), a preview shot (preview.jpg),
+  # a still capture (capture.jpg — the 1-3s shot-to-upload gap is a collision window),
+  # and an in-flight upload (curl upfile=@).
+  pgrep -f 'raspistill.*(live_raw|preview\.jpg|capture\.jpg)' >/dev/null 2>&1 && return 0
+  pgrep -f 'curl.*upfile=@' >/dev/null 2>&1
+}
+
+LAST_KBPS=0     # the incumbent's last ACTIVE upload measurement (decision moments only)
+LAST_KBPS_ID="" # ...and WHICH network it belongs to — the site cell must never pair one
+                # network's number with another's name (proven on veto/crutch paths)
+note_kbps() { LAST_KBPS=$1; LAST_KBPS_ID=$(current_id); }
+report_wifi() {  # tmp/wifi.tmp -> the site's WiFi cell, riding the BATTERY pattern:
+  # fresh file = cell shows, stale/absent = cell vanishes — a device without AWACS
+  # renders the page unchanged (the modularity rule). PASSIVE by design:
+  # the known/visible counts ride the existing scan CACHE — zero radio traffic.
+  case $REPORT_WIFI in no) return 0 ;; auto) remote_on || return 0 ;; esac
+  [[ -n $SITE_URL ]] || return 0   # "yes" without a site has nowhere to publish
+  local tot=0 vis=0 id ssid cache s seen=$'\n' vseen=$'\n'
+  if [[ $BACKEND != wpa ]]; then
+    cache=$(nm_wifi_list no | cut -f1)   # --rescan no: NM's own cache, zero radio
+  else
+    cache=$(cat "$SCAN_CACHE" 2>/dev/null)
+  fi
+  # counts are per PROFILE (uuid), not per key row: an ambiguous 0x profile emits two
+  # key rows on nm and must count once in "total" and at most once in "visible"
+  while IFS=$'\t' read -r id ssid; do
+    [[ -z $id ]] && continue
+    [[ $seen == *$'\n'"$id"$'\n'* ]] || { seen+="$id"$'\n'; (( ++tot )); }
+    if [[ -n $cache && $vseen != *$'\n'"$id"$'\n'* ]]; then
+      if [[ $BACKEND != wpa ]]; then
+        grep -qFx -- "$ssid" <<<"$cache" && { vseen+="$id"$'\n'; (( ++vis )); }
+      else
+        W="$ssid" awk -F'\t' '$1 == ENVIRON["W"] { f = 1; exit } END { exit !f }' <<<"$cache" \
+          && { vseen+="$id"$'\n'; (( ++vis )); }
+      fi
+    fi
+  done < <(known_ids)
+  s=$(dssid)
+  # Band from the live association (iw works under BOTH backends): 6GHz first
+  # (future dongles), then 5GHz, then the 2.4 the Zero 2W actually has.
+  local freq band=""
+  freq=$(iw dev "$IF" link 2>/dev/null | sed -n 's/^[[:space:]]*freq: //p' | head -1)
+  freq=${freq%%.*}
+  if [[ $freq =~ ^[0-9]+$ ]]; then
+    if   (( freq >= 5925 )); then band="6GHz"
+    elif (( freq >= 4900 )); then band="5GHz"
+    elif (( freq >= 2400 && freq <= 2500 )); then band="2.4GHz"
+    fi
+  fi
+  # The number is sent ONLY if it was measured on the network we are on now; a
+  # network change without a fresh measurement shows the name with no speed
+  # rather than another network's speed.
+  local k=$LAST_KBPS
+  [[ -n $LAST_KBPS_ID && $(current_id) == "$LAST_KBPS_ID" ]] || k=0
+  # Format: kbps,visible,total,band,SSID — SSID LAST so its own commas survive (the
+  # site splits with a 5-field limit). Sent via the existing endpoint channel.
+  curl -sf --max-time 4 --data-urlencode "file=tmp/wifi.tmp" \
+    --data-urlencode "data=${k},${vis},${tot},${band},${s:--}" \
+    "$(api_url)" >/dev/null 2>&1 || :
+}
+
+# ------------------------------- radio -----------------------------------------
+scan() {  # cached radio scan: "<escaped-ssid>\t<signal>\t<open|sec>" per line.
+  # [[:space:]] (never \s): stock Pi OS awk is mawk, where \s silently matches nothing.
+  [[ -n ${AWACS_TEST_SCAN:-} ]] && { cat "$SCAN_CACHE" 2>/dev/null; return 0; }
+  local now; now=$(date +%s)
+  # -e, not -s: an EMPTY fresh cache is a real answer (a radio that hears nothing) —
+  # it is served for SCAN_TTL like any other, never re-asked by every caller in turn.
+  if [[ -e $SCAN_CACHE ]] && (( now - $(stat -c%Y "$SCAN_CACHE" 2>/dev/null || echo 0) < SCAN_TTL )); then
+    cat "$SCAN_CACHE"; return 0
+  fi
+  local out="" i tries=3 alt
+  # Boot patience (aasw's field lesson): the radio answers scans slowly in the first
+  # minutes of uptime — an empty early scan must not be mistaken for empty air.
+  (( $(cut -d. -f1 /proc/uptime 2>/dev/null || echo 999) < 180 )) && tries=6
+  for (( i = 0; i < tries; i++ )); do  # EBUSY is normal while associated — retry, never spin
+    if out=$(timeout 15 iw dev "$IF" scan 2>&1) && [[ -n $out ]]; then break; fi
+    # -16 "Device or resource busy" = the supplicant/NM is scanning RIGHT NOW (the real
+    # lab: 77 of 107 daemon scans, both backends) — its own table will hold the answer
+    # in a moment (scan_backend below); one wait, then read it instead of fighting for
+    # the radio three times over.
+    [[ $out == *busy* ]] && { out=""; sleep 3; break; }
+    out=""; sleep 3
+  done
+  dbg "scan: $(( i < tries ? i + 1 : tries ))/${tries} tries used"
+  if [[ -z ${out:-} ]]; then
+    # Tool-level fallbacks: iwlist (aasw's path: some drivers only answer it), then
+    # the BACKEND'S OWN scan table — the source iw was busy protecting.
+    alt=$(scan_iwlist)
+    [[ -n $alt ]] || alt=$(scan_backend)
+    if [[ -n $alt ]]; then
+      rm -f "$SCAN_EMPTY"
+      printf '%s\n' "$alt" | sort -t$'\t' -k2,2gr >"$SCAN_CACHE"
+      cat "$SCAN_CACHE"; return 0
+    fi
+    # Every source came back empty after every retry. ONCE is a hiccup: stale results
+    # beat no results (aasw told the same story), and the cache's mtime is refreshed so
+    # a silent radio is asked again once per SCAN_TTL — not once per caller. SCAN_DEAF
+    # times IN A ROW is no hiccup, it is the picture: a radio that hears NOTHING. The
+    # stale cache is dropped then, so fight()'s "radio sees NOTHING" tell and every
+    # visible-known reader see the truth — seen on NetworkManager: a deaf radio hid behind
+    # a 37-minute-old cache, the fight called it external and the valve never armed.
+    local empties; empties=$(cat "$SCAN_EMPTY" 2>/dev/null)
+    [[ $empties =~ ^[0-9]{1,6}$ ]] || empties=0
+    empties=$(( empties + 1 ))
+    printf '%d\n' "$empties" >"$SCAN_EMPTY"
+    if (( empties >= SCAN_DEAF )); then
+      if [[ -s $SCAN_CACHE ]]; then   # said once, at the moment the picture is dropped
+        if [[ -n ${AWACS_CLI:-} ]]; then
+          llog WARN "radio heard nothing on ${empties} scans in a row - previous results dropped" \
+                    "الراديو لم يسمع أي شبكة في ${empties} مسوحات متتالية - أُسقطت النتائج السابقة"
+        else
+          site_log WARN "radio heard nothing on ${empties} scans in a row - previous results dropped" \
+                        "الراديو لم يسمع أي شبكة في ${empties} مسوحات متتالية - أُسقطت النتائج السابقة"
+        fi
+      fi
+      : >"$SCAN_CACHE"   # empty AND fresh: "nothing" is the answer for the next SCAN_TTL
+      return 0
+    fi
+    # Toolbox runs stay local-only: a hand-run scan is not the daemon's story.
+    if [[ -n ${AWACS_CLI:-} ]]; then
+      llog WARN "scan failed - using previous results (if any)" \
+                "فشل مسح الشبكات - نستخدم نتائج سابقة إن وجدت"
+    else
+      site_log WARN "scan failed - using previous results (if any)" \
+                    "فشل مسح الشبكات - نستخدم نتائج سابقة إن وجدت"
+    fi
+    touch "$SCAN_CACHE" 2>/dev/null || :   # throttle the retry, keep the stale picture
+    [[ -s $SCAN_CACHE ]] && cat "$SCAN_CACHE"
+    return 0
+  fi
+  rm -f "$SCAN_EMPTY"   # the radio heard SOMETHING (named or hidden) — the silence streak ends
+  # Privacy/RSN/WPA absent => truly OPEN. Length cap 128: iw escapes each non-ASCII
+  # byte to \xNN (4 chars), so a legal 32-octet Arabic SSID needs up to 128 chars.
+  local parsed
+  parsed=$(awk '
+    /^BSS /                { if (ssid != "") emit(); sec = 0; sig = "-100"; ssid = "" }
+    /capability:.*Privacy/ { sec = 1 }
+    /^[[:space:]]*RSN:/ || /^[[:space:]]*WPA:/ { sec = 1 }
+    /^[[:space:]]*signal:/ { sig = $2 }
+    /^[[:space:]]*SSID: /  { ssid = substr($0, index($0, "SSID: ") + 6) }
+    function emit()        { if (length(ssid) > 0 && length(ssid) <= 128)
+                               printf "%s\t%s\t%s\n", ssid, sig, (sec ? "sec" : "open") }
+    END                    { if (ssid != "") emit() }
+  ' <<<"$out" | sort -t$'\t' -k2,2gr)
+  # A scan that SUCCEEDED but named nothing (all-hidden air) must not truncate the
+  # cache: the wipe made fight()'s "radio sees NOTHING" tell fire beside beaconing
+  # BSSes (false ME evidence). Keep the previous picture — the TTL bounds its age.
+  if [[ -n $parsed ]]; then
+    printf '%s\n' "$parsed" >"$SCAN_CACHE"
+    cat "$SCAN_CACHE"
+  else
+    [[ -s $SCAN_CACHE ]] && cat "$SCAN_CACHE"
+  fi
+  return 0
+}
+
+scan_iwlist() {  # emits the SAME TSV as scan()'s parser; mawk-safe throughout.
+  # Signal rule demands a MINUS: the relative form "Signal level=65/100" must fall
+  # through to the Quality rule's -70 estimate, not masquerade as +65 dBm (proven
+  # regression vs aasw). Final tr: iwlist prints ESSIDs RAW (no \xNN escaping like
+  # iw), so control bytes are stripped here — tab and newline survive (TSV framing).
+  command -v iwlist >/dev/null 2>&1 || return 0
+  timeout 15 iwlist "$IF" scan 2>/dev/null | awk '
+    /Cell [0-9]+ - Address:/ { if (ssid != "") emit(); ssid = ""; sig = "-100"; sec = 0 }
+    /ESSID:/ {
+      q1 = index($0, "\"")
+      if (q1) { rest = substr($0, q1 + 1); q2 = index(rest, "\""); if (q2) ssid = substr(rest, 1, q2 - 1) }
+    }
+    /Signal level=-[0-9]+/ { n = $0; sub(/.*Signal level=/, "", n); sub(/[^0-9-].*/, "", n); if (n != "") sig = n }
+    /Quality=[0-9]+\/[0-9]+/ { if (sig == "-100") sig = "-70" }
+    /Encryption key:on/ { sec = 1 }
+    function emit() { if (length(ssid) > 0 && length(ssid) <= 128)
+                        printf "%s\t%s\t%s\n", ssid, sig, (sec ? "sec" : "open") }
+    END { if (ssid != "") emit() }' | tr -d '\000-\010\013-\037\177'
+}
+
+scan_backend() {  # emits scan()'s TSV from the backend's OWN table (wpa scan_results /
+  # NM's list). iw refuses with EBUSY exactly when the supplicant or NM is mid-scan —
+  # the disconnected moments AWACS scans most — and that table IS the fresh picture.
+  if [[ $BACKEND != wpa ]]; then
+    local hex sig sec
+    while IFS=$'\t' read -r hex sig sec; do
+      [[ -n $hex ]] || continue
+      [[ $sig =~ ^[0-9]+$ ]] || sig=0
+      # NM reports PERCENT; its own mapping is percent = 2 * (dBm + 100) — invert it so
+      # the column stays dBm like iw's; the name goes back to iw's \xNN-escaped text.
+      printf '%s\t%s\t%s\n' "$(hex2iw "$hex")" "$(( sig / 2 - 100 ))" "$sec"
+    done < <(nm_wifi_list no)
+  else
+    # scan_results: "bssid\tfreq\tsignal\tflags\tssid" after ONE header line; the
+    # supplicant escapes SSIDs the way iw does (\xNN, \\), signal is dBm on nl80211.
+    wpa scan_results | tail -n +2 | awk -F'\t' '
+      NF >= 5 && length($5) > 0 && length($5) <= 128 {
+        printf "%s\t%s\t%s\n", $5, ($3 ~ /^-?[0-9]+$/ ? $3 : "-100"),
+               ($4 ~ /WPA|RSN|WEP/ ? "sec" : "open") }'
+  fi | sort -t$'\t' -k2,2gr
+}
+
+hex2iw() {  # lowercase hex -> iw's escaped text: printable ASCII kept, the rest \xNN
+  local h=$1 out="" i b c
+  for (( i = 0; i < ${#h}; i += 2 )); do
+    b=$(( 16#${h:i:2} ))
+    if (( b >= 32 && b <= 126 && b != 92 )); then printf -v c '%b' "\\x${h:i:2}"; out+=$c
+    else out+="\\x${h:i:2}"; fi
+  done
+  printf '%s' "$out"
+}
+
+wpa_known_ids() {  # "<id>\t<ssid>"; -i output has ONE header line (aasw dropped id 0)
+  wpa list_networks | tail -n +2 | awk -F'\t' 'NF >= 2 { printf "%s\t%s\n", $1, $2 }'
+}
+
+wpa_visible_known_ids() {  # stored networks currently on the air (EXACT raw-text match).
+  # ENVIRON, never awk -v: -v escape-decodes the \xNN text both tools print for
+  # non-ASCII SSIDs, which made every Arabic network invisible (proven).
+  local s; s=$(scan) || :
+  while IFS=$'\t' read -r id ssid; do
+    W="$ssid" awk -F'\t' '$1 == ENVIRON["W"] { f = 1; exit } END { exit !f }' <<<"$s" \
+      && printf '%s\t%s\n' "$id" "$ssid"
+  done < <(wpa_known_ids)
+}
+
+wpa_arm_hidden() {  # hidden SSIDs answer only directed probes: scan_ssid 1 on every known
+  # network, runtime-only (never save_config). Re-run after any supplicant restart.
+  local id _
+  while IFS=$'\t' read -r id _; do
+    wpa set_network "$id" scan_ssid 1 >/dev/null || :
+  done < <(wpa_known_ids)
+}
+
+# ═══════════════════════ NM BACKEND (NetworkManager images) ═══════════════════════
+# Doctrine (NM-SPEC.md): on NM images AWACS is a SUPERVISOR over NetworkManager's own
+# autonomy — it observes, waits, and only after NM has provably failed does it issue
+# cooperative nmcli overrides and boot-only /run crutches. All SSID matching on NM is
+# LOWERCASE HEX (locale/escape/colon-proof — Arabic and emoji become first-class).
+NM_ERR=""; NM_RC=0; NM_AUTH=0   # per-fight activation evidence (auth latch is STICKY per fight)
+NM_L3_SPENT=0                    # this streak already tried L3's NetworkManager restart
+NM_RC8=0                         # sticky per streak: nmcli itself unreachable (exit 8)
+NM_SAW_BUSY=0                    # a connecting-band sample was seen since the last check
+NM_SETTLED_SEEN=0                # consecutive settled (30/120) classifications
+NM_LAME_REASON=""                # nocli | "" (unmanaged) — decides whether the park may exit
+# Documented limit: NM device state 20 "unavailable" (e.g. a
+# halted radio firmware) never arms the reboot valve on the nm arm — on wpa the
+# empty-scan tell would. Deliberate for now: 20 also covers plain rfkill/no-radio
+# states where a reboot cures nothing; revisit only with real-device evidence.
+
+text2hex() {  # VERBATIM text -> lowercase hex (never %b: a literal \x41 stays 4 chars)
+  printf %s "$1" | od -An -tx1 | tr -d ' \n'
+}
+iw2hex() {    # iw's \xNN-escaped text -> the same hex space
+  printf %b "$1" | od -An -tx1 | tr -d ' \n'
+}
+hex2bytes() { # hex -> ";"-separated DECIMAL bytes for the keyfile ssid= byte-array
+  local h=$1 out="" i
+  for (( i = 0; i < ${#h}; i += 2 )); do
+    out+="$(( 16#${h:i:2} ));"
+  done
+  printf '%s' "$out"
+}
+
+nm_dev_state() {  # leading integer of GENERAL.STATE (0 when unreadable)
+  local st; st=$(nmcli -g GENERAL.STATE device show "$IF" 2>/dev/null)
+  st=${st%% *}
+  if [[ $st =~ ^[0-9]+$ ]]; then printf '%s' "$st"; else printf '0'; fi
+}
+
+nm_note_state() {  # every state READ feeds the streak's evidence — called in the MAIN
+  # shell (a $(...) subshell could never persist these flags): a connecting-band
+  # sample marks NM as still working; any readable state proves nmcli reachable.
+  local st=$1
+  if (( (st >= 40 && st <= 90) || st == 110 )); then NM_SAW_BUSY=1; fi
+  if (( st != 0 )); then NM_RC8=0; fi
+}
+
+nm_me_settled() {  # may ME evidence arm (and the valve fire) on NM? Only when NM has
+  # GIVEN UP (30 disconnected / 120 failed) on TWO consecutive classifications with
+  # no busy sighting between them — a single point-sample proved to arm the clock
+  # beside a still-cycling NM (proven reboot of a box NM was actively retrying).
+  # Anti-strand widening: state UNREADABLE with nmcli itself exiting 8 — probed
+  # HERE, so a DEAD service counts even though no candidate ever reaches
+  # be_activate (proven unreachable otherwise) — plus L3's NM restart already
+  # spent = a hosed NM, a genuine ME wedge whose one remaining cure is the reboot.
+  local st rc; st=$(nm_dev_state); nm_note_state "$st"
+  if (( st == 0 )); then
+    nmcli -t -f UUID,TYPE connection show >/dev/null 2>&1; rc=$?
+    (( rc == 8 )) && NM_RC8=1
+    if (( NM_L3_SPENT && NM_RC8 )); then return 0; fi
+    return 1
+  fi
+  if (( st == 30 || st == 120 )); then
+    if (( ++NM_SETTLED_SEEN >= 2 )); then return 0; fi
+    return 1
+  fi
+  # Readable and NOT given-up (connected/connecting/unmanaged...): the converse of the
+  # arming rule — the clock may only stay armed while this function is true, so a
+  # good read RESTARTS the evidence (a stale stamp once fired after NM died again).
+  NM_SETTLED_SEEN=0; ME_SINCE=0
+  return 1
+}
+
+nm_busy() {  # NM actively working the device (connecting band 40-90, or 110)
+  local st; st=$(nm_dev_state); nm_note_state "$st"
+  (( (st >= 40 && st <= 90) || st == 110 ))
+}
+
+# shellcheck disable=SC2120  # the bound is an optional override; callers take the default
+nm_wait_settled() {  # bounded wait until NM is out of its transition band — never a new
+  # polling loop: called ONLY at intervention moments inside existing call sites.
+  local i st
+  for (( i = 0; i < ${1:-$ASSOC_WAIT}; i++ )); do
+    st=$(nm_dev_state); nm_note_state "$st"
+    case $st in 10|20|30|100|120) return 0 ;; esac
+    sleep 1
+  done
+  return 0
+}
+
+nm_profile_hexssid() {  # saved profile's SSID as lowercase hex (0x form or UTF-8 text)
+  # -e no: terse mode otherwise ESCAPES ':' and '\' inside values ("Cafe\:Net"),
+  # which would mis-key every colon/backslash SSID (proven class).
+  local s; s=$(nmcli -e no -g 802-11-wireless.ssid connection show uuid "$1" 2>/dev/null)
+  # nmcli prints the 0x byte form ONLY for names that are not valid UTF-8 — so a
+  # 0x string whose bytes DO decode as UTF-8 cannot be that form: it is a network
+  # literally named "0xCAFE" (proven mis-keyed before). Disambiguate by decoding.
+  # Prints ONE key per line — TWO in the one genuinely ambiguous case: a 0x string
+  # whose bytes are NOT valid UTF-8 could be nmcli's byte form OR a network
+  # literally named "0xCAFE"; both keys are emitted and the air picks the real one.
+  local h esc="" i
+  if [[ $s =~ ^0x([0-9a-fA-F]{2})+$ ]]; then
+    h=${s#0x}
+    for (( i = 0; i < ${#h}; i += 2 )); do esc+="\\x${h:i:2}"; done   # deterministic \xNN
+    if ! printf '%b' "$esc" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1; then
+      printf '%s\n' "$h" | tr 'A-F' 'a-f'   # byte-form reading
+    fi
+  fi
+  text2hex "$s"; echo                         # literal-text reading (always)
+}
+
+nm_known_ids() {  # "UUID\tHEXSSID" of saved wifi profiles (1.42 prints TYPE alias
+  # "wifi"; older spells it out — accept both). UUID/TYPE are colon-free by format.
+  local uuid type
+  while IFS=: read -r uuid type; do
+    [[ $type == wifi || $type == 802-11-wireless ]] || continue
+    local k
+    while IFS= read -r k; do   # one row per key (two only in the 0x-ambiguous case)
+      [[ -n $k ]] && printf '%s\t%s\n' "$uuid" "$k"
+    done <<<"$(nm_profile_hexssid "$uuid")"
+  done < <(nmcli -t -f UUID,TYPE connection show 2>/dev/null)
+}
+
+nm_wifi_list() {  # "HEXSSID\tSIGNAL%\topen|sec" per AP; $1=--rescan mode (auto|no).
+  # SSID-HEX/SIGNAL/SECURITY are colon-free by format; hex LOWERCASED at the producer
+  # (nmcli's case is not contractual — one uppercase would blank every intersection).
+  local hex sig sec seen=$'\n'
+  while IFS=: read -r hex sig sec; do
+    [[ -n $hex ]] || continue                      # hidden AP with no directed answer
+    hex=$(printf '%s' "$hex" | tr 'A-F' 'a-f')
+    [[ $seen == *$'\n'"$hex"$'\n'* ]] && continue  # dual-band dedupe
+    seen+="$hex"$'\n'
+    printf '%s\t%s\t%s\n' "$hex" "${sig:-0}" "$([[ -z $sec ]] && echo open || echo sec)"
+  done < <(nmcli -t -f SSID-HEX,SIGNAL,SECURITY device wifi list ifname "$IF" \
+           --rescan "${1:-auto}" 2>/dev/null)
+}
+
+nm_visible_known_ids() {  # known ∩ air, by exact hex equality — ONE row per UUID
+  # (an ambiguous 0x profile carries two keys; if both readings are on the air the
+  # profile must still be ONE candidate, never two con-ups)
+  local list uuid hex seen=$'\n'
+  list=$(nm_wifi_list auto | cut -f1)
+  while IFS=$'\t' read -r uuid hex; do
+    [[ -n $hex ]] || continue
+    [[ $seen == *$'\n'"$uuid"$'\n'* ]] && continue
+    grep -qFx -- "$hex" <<<"$list" && { seen+="$uuid"$'\n'; printf '%s\t%s\n' "$uuid" "$hex"; }
+  done < <(nm_known_ids)
+}
+
+nm_auth_sig() {  # does this activation stderr smell like credentials (not a wedge)?
+  printf %s "$1" | grep -qiE 'secret|no-secrets|authenticat|802-1X|key.mgmt|pre-shared'
+}
+
+nm_del_own() {  # THE ONLY delete/down site on the NM arm — double-guarded, fail-SAFE.
+  local name row file
+  name=$(nmcli -e no -g connection.id connection show uuid "$1" 2>/dev/null) || name=""
+  [[ -n $name ]] || { dbg "del_own: $1 already gone"; return 0; }
+  # FILENAME from the LISTING (1.42 has no connection.filename detail property).
+  # UUID (colon-free) leads, so a first-colon split is exact; the tail stays escaped
+  # but is only PREFIX-tested and our prefix carries no ':' or '\'.
+  row=$(nmcli -t -f UUID,FILENAME connection show 2>/dev/null \
+        | U="$1" awk -F: '$1 == ENVIRON["U"] { print; exit }')
+  file=${row#*:}
+  [[ $name =~ ^awacs-(crutch|safety)-[0-9]+-[0-9]+$ ]] || {
+    log ERROR "REFUSING delete: '$name' is not an awacs crutch"; return 1; }
+  [[ $file == /run/NetworkManager/system-connections/awacs-* ]] || {
+    log ERROR "REFUSING delete: '$name' lives outside /run (owner file?)"; return 1; }
+  nmcli connection down uuid "$1" >/dev/null 2>&1 || :
+  nmcli connection delete uuid "$1" >/dev/null 2>&1 || :
+}
+
+nm_add_crutch() {  # $1=hexssid $2=psk-or-empty $3=hidden(yes/no) -> prints UUID.
+  # NEVER `nmcli device wifi connect` (it PERSISTS an autoconnect profile in /etc —
+  # the accumulation trap the NO-BLOCK law bans). One /run keyfile, boot-only.
+  local hex=$1 psk=$2 hidden=$3 uuid name path
+  uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null) || return 1
+  if [[ -n $psk ]]; then name="awacs-safety-$(date +%s)-$$"
+  else name="awacs-crutch-$(date +%s)-$$"; fi
+  path="/run/NetworkManager/system-connections/${name}.nmconnection"
+  install -d -m 700 /run/NetworkManager/system-connections 2>/dev/null || :
+  {
+    printf '[connection]\nid=%s\nuuid=%s\ntype=wifi\nautoconnect=false\n' "$name" "$uuid"
+    printf '[wifi]\nmode=infrastructure\nhidden=%s\nssid=%s\n' \
+           "$([[ $hidden == yes ]] && echo true || echo false)" "$(hex2bytes "$hex")"
+    if [[ -n $psk ]]; then
+      # keyfile escaping: literal backslash -> \\, and a LEADING space -> \s
+      # (GKeyFile strips unescaped leading whitespace = silent wrong-password).
+      psk=${psk//\\/\\\\}
+      [[ $psk == ' '* ]] && psk="\\s${psk# }"
+      printf '[wifi-security]\nkey-mgmt=wpa-psk\npsk=%s\n' "$psk"
+    fi
+    printf '[ipv4]\nmethod=auto\n[ipv6]\nmethod=auto\n'
+  } >"$path" 2>/dev/null || return 1
+  chmod 600 "$path" 2>/dev/null || :   # NM REFUSES loose keyfiles — correctness gate
+  nmcli connection load "$path" >/dev/null 2>&1 || { rm -f "$path"; return 1; }
+  printf '%s' "$uuid"
+}
+
+nm_reap() {  # startup belt-and-suspenders: marker, name-prefix sweep, /run glob
+  local uuid name
+  if [[ -s $OPEN_ID_FILE ]]; then
+    nm_del_own "$(head -1 "$OPEN_ID_FILE")" || :
+    rm -f "$OPEN_ID_FILE"
+  fi
+  while IFS=: read -r uuid name; do
+    if [[ $name == awacs-* ]]; then nm_del_own "$uuid" || :; fi
+  done < <(nmcli -t -f UUID,NAME connection show 2>/dev/null)
+  rm -f /run/NetworkManager/system-connections/awacs-*.nmconnection 2>/dev/null || :
+  nmcli connection reload >/dev/null 2>&1 || :
+}
+
+nm_recover() {  # NM-side ladder: cooperative only — NEVER ip link down/up on a managed
+  # device (double-authority loop, proven), never dhcpcd.
+  case "$1" in
+    1) site_log WARN "recover L1: radio bounce" "إنعاش م1: نطفي الواي فاي ونشغله"
+       # Bounce OUR interface's own killswitch, never the whole WLAN type: `nmcli radio
+       # wifi off` soft-blocks EVERY wireless radio on the box (a second dongle, or an
+       # access point hosted on the same box: every activation then dies with
+       # ssid-not-found). nmcli's switch stays as the fallback for drivers
+       # that expose no rfkill node. Either way NM still resets its autoconnect blocks.
+       local rf=""
+       for rf in /sys/class/net/"$IF"/phy80211/rfkill*; do break; done   # first match (glob, no ls)
+       rf=${rf##*/}   # "rfkill0"; the unmatched literal "rfkill*" fails the regex below
+       if [[ $rf =~ ^rfkill([0-9]+)$ ]] && command -v rfkill >/dev/null 2>&1; then
+         rfkill block   "${BASH_REMATCH[1]}" 2>/dev/null || :; sleep 2
+         rfkill unblock "${BASH_REMATCH[1]}" 2>/dev/null || :
+       else
+         nmcli radio wifi off 2>/dev/null || :; sleep 2
+         nmcli radio wifi on  2>/dev/null || :
+       fi
+       nm_wait_settled 15 ;;
+    2) site_log WARN "recover L2: re-kick NetworkManager on ${IF}" "إنعاش م2: نعيد ضبط الاتصال"
+       nmcli device reapply "$IF" >/dev/null 2>&1 || :
+       sleep 3
+       if ! have_net; then
+         # disconnect latches a device-level no-autoconnect until a manual connect —
+         # the pair stays back-to-back; -w 5 keeps connect from blocking ~90s (NM
+         # keeps activating after nmcli returns; wait_ip/have_net observe). A crash
+         # inside the pair heals at the respawn's boot enable_all.
+         nmcli device disconnect "$IF" >/dev/null 2>&1 || :
+         sleep 1
+         nmcli -w 5 device connect "$IF" >/dev/null 2>&1 || :
+         sleep 8
+       fi
+       iw dev "$IF" set power_save off 2>/dev/null || : ;;
+    3) site_log WARN "recover L3: restart NetworkManager + reload WiFi firmware" \
+                     "إنعاش م3: نعيد تشغيل مدير الشبكة وتعريف الشريحة"
+       NM_L3_SPENT=1
+       systemctl restart NetworkManager 2>/dev/null || :
+       sleep 8
+       modprobe -r brcmfmac 2>/dev/null || :; sleep 2
+       modprobe brcmfmac 2>/dev/null || :; sleep 8
+       iw dev "$IF" set power_save off 2>/dev/null || :
+       # Reap BELT: do NOT assume the restart wiped our /run keyfiles (not contractual;
+       # tmpfs files outlive the service and NM re-reads the dir at startup).
+       rm -f /run/NetworkManager/system-connections/awacs-*.nmconnection 2>/dev/null || :
+       nmcli connection reload >/dev/null 2>&1 || :
+       OPEN_ID=""; rm -f "$OPEN_ID_FILE" ;;
+  esac
+}
+
+# ------------------------------ dispatchers -------------------------------------
+# Existing public names become thin dispatchers; fight()/main() call ONLY these.
+known_ids()         { if [[ $BACKEND != wpa ]]; then nm_known_ids; else wpa_known_ids; fi; }
+visible_known_ids() { if [[ $BACKEND != wpa ]]; then nm_visible_known_ids; else wpa_visible_known_ids; fi; }
+arm_hidden()        { if [[ $BACKEND != wpa ]]; then :; else wpa_arm_hidden; fi; }
+# (nm: hidden probing is the SAVED per-profile property 802-11-wireless.hidden — the
+# re-arm chore disappears. Owner caveat, documented: a hidden OWNER profile must carry
+# hidden=yes already; AWACS may not write it in — iron law: never modify owner profiles.)
+auth_failing()      { if [[ $BACKEND != wpa ]]; then (( NM_AUTH )); else wpa_auth_failing; fi; }
+recover()           { if [[ $BACKEND != wpa ]]; then nm_recover "$1"; else wpa_recover "$1"; fi; }
+del_own()           { if [[ $BACKEND != wpa ]]; then nm_del_own "$1"; else wpa remove_network "$1" >/dev/null || :; fi; }
+current_id() {
+  if [[ $BACKEND != wpa ]]; then nmcli -g GENERAL.CON-UUID device show "$IF" 2>/dev/null
+  else wpa status | sed -n 's/^id=//p' | head -1; fi
+}
+get_priority() {
+  if [[ $BACKEND != wpa ]]; then nmcli -g connection.autoconnect-priority connection show uuid "$1" 2>/dev/null
+  else wpa get_network "$1" priority; fi
+}
+enable_all() {
+  # wpa: re-enable all (select_network disabled the rest). nm: hand NM back its
+  # autonomy with a bounded nudge — -w 5 is LOAD-BEARING (default wait ~90s and this
+  # runs inside on_shutdown's trap); NEVER `connection modify ... autoconnect`.
+  if [[ $BACKEND != wpa ]]; then
+    local st; st=$(nm_dev_state)
+    if (( st == 30 || st == 120 )); then
+      nmcli -w 5 device connect "$IF" >/dev/null 2>&1 || :
+    fi
+  else
+    wpa_enable_all
+  fi
+}
+reassociate() {  # fight's gentle open: ask the base layer to try. On wpa this re-associates
+  # even a LIVE association (a few seconds of link loss), which is why fight() skips it
+  # while the link is provably alive; on nm it acts only on a disconnected/failed device.
+  if [[ $BACKEND != wpa ]]; then
+    local st; st=$(nm_dev_state)
+    if (( st == 30 || st == 120 )); then
+      nmcli -w 5 device connect "$IF" >/dev/null 2>&1 || :
+    fi
+  else
+    wpa reassociate >/dev/null || :
+  fi
+}
+pref_prescan() {  # wpa: supplicant-side directed scan surfaces hidden home networks;
+  # nm probes its hidden profiles itself and --rescan auto covers the rest.
+  if [[ $BACKEND == wpa ]]; then wpa scan >/dev/null || :; sleep 4; fi
+}
+be_activate() {  # raw activation of ID $1 (association + DHCP proof)
+  # Already riding $1 with an address? Re-activating it would only bounce a live
+  # association (nm deactivates then activates, wpa re-selects) - prove it as it stands.
+  if [[ $1 == "$(current_id)" && -n $(ip -4 addr show dev "$IF" scope global 2>/dev/null) ]]; then
+    wait_ip; return
+  fi
+  if [[ $BACKEND != wpa ]]; then
+    nm_wait_settled   # never issue con up mid-transition (100 counts as settled)
+    NM_ERR=$(nmcli -w "$ASSOC_WAIT" connection up uuid "$1" 2>&1 >/dev/null); NM_RC=$?
+    if (( NM_RC == 8 )); then NM_RC8=1; else NM_RC8=0; fi
+    if (( NM_RC == 3 || NM_RC == 4 )) && nm_auth_sig "$NM_ERR"; then
+      NM_AUTH=1   # sticky for the whole fight: a later timeout on another candidate
+    fi            # must not erase a credentials sighting (wpa's TEMP-DISABLED parity)
+    (( NM_RC == 0 )) || return 1
+    wait_ip || return 1   # belt: nmcli said up — confirm the lease/carrier like wpa does
+  else
+    wpa select_network "$1" >/dev/null
+    wait_ip || return 1
+  fi
+}
+disp_ssid() {  # OWNER-FACING name for ID $1 (wpa fallback text $2) — hex must never
+  # reach a human surface; NM's UTF-8 property renders Arabic directly.
+  if [[ $BACKEND != wpa ]]; then
+    nmcli -e no -g 802-11-wireless.ssid connection show uuid "$1" 2>/dev/null | tr -d '\000-\037\177'
+  else
+    pssid "$2"
+  fi
+}
+reap_crutches() {  # startup: predecessor's crutch must not survive the crash
+  if [[ $BACKEND != wpa ]]; then
+    nm_reap
+  else
+    if [[ -s $OPEN_ID_FILE ]]; then
+      wpa remove_network "$(head -1 "$OPEN_ID_FILE")" >/dev/null 2>&1 || :
+      rm -f "$OPEN_ID_FILE"
+    fi
+  fi
+}
+
+BACKEND=wpa
+detect_backend() {  # decided once per daemon start; the rc.local respawn re-decides.
+  # $1=fast: toolbox runs skip the boot-patience wait (read-only, harmless).
+  BACKEND="wpa"
+  # Enabled-or-active = this IS an NM image — wait for it, never fight beside it
+  # (an early "wpa" verdict would put two authorities on one radio: proven disaster).
+  if systemctl is-active --quiet NetworkManager 2>/dev/null \
+     || systemctl is-enabled --quiet NetworkManager 2>/dev/null; then
+    BACKEND="nm"
+    if ! command -v nmcli >/dev/null 2>&1; then
+      BACKEND="nm_lame"          # broken install: NM runs, its CLI is gone
+      NM_LAME_REASON=nocli       # the park loop may EXIT once auto-install lands nmcli
+    else
+      local i st
+      if [[ ${1:-} != fast ]]; then
+        for (( i = 0; i < 12; i++ )); do   # up to ~60s boot patience, then decide
+          systemctl is-active --quiet NetworkManager 2>/dev/null && break
+          sleep 5
+        done
+      fi
+      st=$(nm_dev_state)
+      (( st == 10 )) && BACKEND="nm_lame"    # unmanaged: every con up/down is inert
+    fi
+  fi
+  readonly BACKEND
+}
+# ═════════════════════════════ end NM backend ════════════════════════════════════
+
+wait_ip() {  # association alone is not a connection — demand an IPv4 lease too
+  local i
+  for (( i = 0; i < ASSOC_WAIT; i++ )); do
+    [[ -n $(ip -4 addr show dev "$IF" scope global 2>/dev/null) ]] \
+      && iw dev "$IF" link 2>/dev/null | grep -q '^Connected' && return 0
+    sleep 1
+  done
+  return 1
+}
+
+connect_id() {  # activate network ID $1 (wpa numeric id / nm profile UUID) — SHARED body,
+  # same crediting doctrine on both backends.
+  dbg "connect_id: activating $1 (backend $BACKEND)"
+  be_activate "$1" || return 1
+  LINK_OK=1   # association + DHCP succeeded this round — the LINK layer is provably fine
+  have_net || return 1
+  # Verified internet — site_log may speak from this moment on. ME_SINCE clears
+  # HERE too: the tick path only credits health it SEES, and a crutch that lives
+  # less than one tick left a stale wedge streak that later rebooted a box which
+  # provably had working internet 97s earlier (proven). Credit the moment itself.
+  net_up=1; ME_SINCE=0
+}
+
+wpa_enable_all() { wpa enable_network all >/dev/null || :; }
+# select_network disables every other network in the LIVE supplicant. EVERY winning
+# path below re-enables all (proven not to break the current association) so the
+# supplicant keeps its autonomous fallback and a dead AWACS can never strand the box.
+#
+# THE NO-BLOCK LAW (learned the hard way: an earlier watchdog
+# left FOUR known networks permanently disabled — banned at different offline
+# moments, never unbanned, until only the hotspot and home router could connect):
+#   1. This script NEVER writes wpa_supplicant.conf — zero save_config calls exist,
+#      so no ban can ever reach the disk.
+#   2. This script NEVER calls disable_network — the only network it removes is
+#      its OWN temporary crutch (an id it created this boot).
+#   3. enable_all runs at startup, at every fight start, after every win, on every
+#      losing fight's exit, and at shutdown — so even the supplicant's own runtime
+#      TEMP-DISABLED marks are lifted again and again. A permanent block is
+#      structurally impossible here.
+
+wpa_recover() {  # escalation ladder — each rung targets a DIFFERENT layer (aasw hit the wrong ones)
+  case "$1" in
+    1) site_log WARN "recover L1: radio bounce" "إنعاش م1: إعادة تشغيل الراديو"
+       rfkill unblock wifi 2>/dev/null || :
+       ip link set "$IF" down; sleep 2; ip link set "$IF" up; sleep 3 ;;
+    2) site_log WARN "recover L2: restart dhcpcd (respawns the REAL per-interface supplicant)" \
+                     "إنعاش م2: إعادة تشغيل مدير الشبكة"
+       systemctl restart dhcpcd 2>/dev/null || systemctl restart wpa_supplicant 2>/dev/null || :
+       sleep 8; arm_hidden
+       iw dev "$IF" set power_save off 2>/dev/null || : ;;  # a fresh supplicant re-enables it
+    3) site_log WARN "recover L3: reload brcmfmac firmware (the 3-second cure a wedge needs)" \
+                     "إنعاش م3: إعادة تحميل تعريف شريحة الواي فاي"
+       modprobe -r brcmfmac 2>/dev/null || :; sleep 2
+       modprobe brcmfmac 2>/dev/null || :; sleep 8; arm_hidden
+       iw dev "$IF" set power_save off 2>/dev/null || : ;;  # a rebuilt netdev re-enables it
+  esac
+}
+
+# ------------------------------- crutches --------------------------------------
+OPEN_ID=""  # temp network id currently parked in the live supplicant (crutch, not family)
+mark_crutch() {  # crash-proof: a respawned daemon reaps its dead predecessor's crutch
+  OPEN_ID="$1"
+  printf '%s\n' "$1" >"$OPEN_ID_FILE" 2>/dev/null || :
+}
+drop_open() {
+  [[ -n $OPEN_ID ]] && { del_own "$OPEN_ID" || :; OPEN_ID=""; }
+  rm -f "$OPEN_ID_FILE"
+}
+
+try_safety() {  # aasw's SAFETY_NET made real: owner-listed emergency networks WITH
+  # passwords, tried BEFORE open strangers. Attempted even when not visible in scan
+  # (hotspots are often just-enabled or hidden; wait_ip bounds each try at 25s).
+  (( ${#SAFETY_NET[@]} )) || return 1
+  site_log INFO "trying emergency networks (${#SAFETY_NET[@]} listed)" \
+                "نحاول شبكات الطوارئ"
+  local ssid id ok psk
+  for ssid in "${!SAFETY_NET[@]}"; do
+    psk=${SAFETY_NET[$ssid]}
+    if [[ $BACKEND != wpa ]]; then
+      # Keyfile byte-arrays carry ANY name/psk byte (the wpa-era backslash/quote
+      # skip disappears here); only psk length sanity gates (8-63, or 64 hex).
+      if [[ -n $psk ]] \
+         && ! { (( ${#psk} >= 8 && ${#psk} <= 63 )) || [[ $psk =~ ^[0-9a-fA-F]{64}$ ]]; }; then
+        continue
+      fi
+      { id=$(nm_add_crutch "$(text2hex "$ssid")" "$psk" no) && [[ -n $id ]]; } || continue
+      printf '%s\n' "$id" >"$OPEN_ID_FILE" 2>/dev/null || :   # pre-mark (crash window)
+      if connect_id "$id"; then
+        mark_crutch "$id"
+        enable_all
+        site_log OK "connected to EMERGENCY network: $ssid" \
+                    "اتصل بشبكة الطوارئ: $(pssid "$ssid")"
+        return 0
+      fi
+      del_own "$id" || :
+      rm -f "$OPEN_ID_FILE"
+      continue
+    fi
+    # Skip names/passwords the supplicant's quoted parser cannot carry (backslash
+    # or a literal double-quote would malform the set_network line) — clean skip.
+    [[ $ssid == *"\\"* || $ssid == *'"'* || ${SAFETY_NET[$ssid]} == *'"'* ]] && continue
+    { id=$(wpa add_network) && [[ $id =~ ^[0-9]+$ ]]; } || continue
+    # PRE-mark: a daemon killed inside the 25s attempt window must not orphan this id —
+    # the respawn's startup sweep reaps whatever the marker names (nothing untracked parks).
+    printf '%s\n' "$id" >"$OPEN_ID_FILE" 2>/dev/null || :
+    # psk goes over STDIN, never argv: /proc/PID/cmdline is world-readable and a
+    # set_network ... psk argument would flash the password to every local user.
+    # An EMPTY value is a deliberately-listed OPEN hotspot -> key_mgmt NONE instead.
+    ok=0
+    if wpa set_network "$id" ssid "\"$ssid\"" | grep -q OK; then
+      if [[ -n ${SAFETY_NET[$ssid]} ]]; then
+        printf 'set_network %s psk "%s"\n' "$id" "${SAFETY_NET[$ssid]}" \
+          | wpa_cli -i "$IF" 2>/dev/null | grep -q OK && ok=1
+      else
+        wpa set_network "$id" key_mgmt NONE | grep -q OK && ok=1
+      fi
+    fi
+    if (( ok )) && connect_id "$id"; then
+      mark_crutch "$id"
+      enable_all
+      site_log OK "connected to EMERGENCY network: $ssid" \
+                  "اتصل بشبكة الطوارئ: $(pssid "$ssid")"
+      return 0
+    fi
+    wpa remove_network "$id" >/dev/null || :
+    rm -f "$OPEN_ID_FILE"   # attempt failed and the id is gone — clear the pre-mark
+  done
+  return 1
+}
+
+try_open() {  # last resort: truly-open APs, temp ID, never saved to disk.
+  # Dedupe multi-BSS SSIDs (a dual-band AP is ONE attempt) and skip hopeless signals
+  # (<-80dBm, open strangers only — KNOWN networks are always attempted, however weak).
+  [[ $OPEN_NETWORKS == "yes" ]] || return 1
+  site_log INFO "trying open networks as last resort" \
+                "نحاول الشبكات المفتوحة كخيار أخير"
+  local ssid sig sec id s seen=$'\n'
+  if [[ $BACKEND != wpa ]]; then
+    # nm candidates ride nmcli's list: SIGNAL is 0-100 PERCENT (never mix with dBm);
+    # <25% ≈ the -80dBm stranger cutoff. Open Arabic/emoji names — skipped forever on
+    # the wpa arm — become reachable here (hex + byte-array keyfile carry anything).
+    local hex
+    while IFS=$'\t' read -r hex sig sec; do
+      [[ $sec == open ]] || continue
+      [[ $sig =~ ^[0-9]+$ ]] && (( sig < 25 )) && continue
+      { id=$(nm_add_crutch "$hex" "" no) && [[ -n $id ]]; } || continue
+      printf '%s\n' "$id" >"$OPEN_ID_FILE" 2>/dev/null || :   # pre-mark (crash window)
+      if connect_id "$id"; then
+        mark_crutch "$id"
+        enable_all
+        site_log OK "connected to OPEN network: $(disp_ssid "$id" "")" \
+                    "اتصل بشبكة مفتوحة: $(disp_ssid "$id" "")"
+        return 0
+      fi
+      del_own "$id" || :
+      rm -f "$OPEN_ID_FILE"
+    done < <(nm_wifi_list auto)
+    return 1
+  fi
+  while IFS=$'\t' read -r ssid sig sec; do
+    [[ $sec == "open" ]] || continue
+    [[ $ssid == *"\\"* ]] && continue  # escaped (non-ASCII) name — the supplicant cannot take it
+    [[ $seen == *$'\n'"$ssid"$'\n'* ]] && continue
+    seen+="$ssid"$'\n'
+    s=${sig%%.*}
+    # dBm is NEGATIVE by physics; a non-negative reading is driver garbage — treat it
+    # as unknown (attempt anyway) rather than "excellent signal".
+    [[ $s =~ ^-[0-9]+$ ]] && (( s < -80 )) && continue
+    { id=$(wpa add_network) && [[ $id =~ ^[0-9]+$ ]]; } || continue
+    printf '%s\n' "$id" >"$OPEN_ID_FILE" 2>/dev/null || :  # pre-mark (crash-proof attempt window)
+    if wpa set_network "$id" ssid "\"$ssid\"" | grep -q OK \
+       && wpa set_network "$id" key_mgmt NONE | grep -q OK \
+       && connect_id "$id"; then
+      mark_crutch "$id"
+      enable_all  # the winning-path law: stored networks stay armed so the supplicant
+                  # can carry us HOME by itself when a real network returns (proven trap)
+      site_log OK "connected to OPEN network: $ssid" \
+                  "اتصل بشبكة مفتوحة: $(pssid "$ssid")"
+      return 0
+    fi
+    wpa remove_network "$id" >/dev/null || :
+    rm -f "$OPEN_ID_FILE"   # attempt failed and the id is gone — clear the pre-mark
+  done < <(scan)
+  return 1
+}
+
+# ------------------------------- decisions -------------------------------------
+best_by_upload() {  # the blueprint's heart: among working candidates, MEASURED upload decides.
+  # $1 = kbps floor a challenger must beat (never-break law); $2 = incumbent id to go home to.
+  # best starts at -1: a working-but-very-slow candidate still beats having nothing (proven
+  # that 0-init rejected all sub-107kbps networks and parked the box arbitrarily).
+  local floor="${1:-0}" home="${2:-}" best_id="" best_kbps=-1 id ssid kbps
+  if ! probe_on; then
+    # SIGNAL MODE (no probe target configured): measurement needs somewhere to upload
+    # to; without it the strongest visible known network that DELIVERS internet wins.
+    while IFS=$'\t' read -r id ssid; do
+      [[ -n $home && $id == "$home" ]] && continue
+      connect_id "$id" || continue
+      enable_all
+      site_log OK "connected: $(assoc_ssid) (signal mode - no upload probe target configured)" \
+                  "اتصل بشبكة: $(dssid) (وضع الإشارة - لا هدف لقياس الرفع)"
+      return 0
+    done < <(visible_known_by_signal)
+    [[ -n $home ]] && connect_id "$home" && { enable_all; return 0; }
+    return 1
+  fi
+  while IFS=$'\t' read -r id ssid; do
+    # The incumbent was measured moments ago (that number IS the floor) — probing
+    # it again buys nothing and costs a redundant ~15s of churn.
+    [[ -n $home && $id == "$home" ]] && continue
+    connect_id "$id" || continue
+    kbps=$(up_kbps)
+    site_log INFO "candidate [$id] $(disp_ssid "$id" "$ssid") uploads at ${kbps} kbps" \
+                  "مرشح $(disp_ssid "$id" "$ssid") يرفع بسرعة ${kbps} كيلوبت/ث"
+    if (( kbps > best_kbps )); then best_id=$id; best_kbps=$kbps; fi
+    (( kbps >= CUR_MIN_UP * 4 )) && break  # plainly fast — stop burning probe traffic
+  done < <(visible_known_ids)
+  # A 0-kbps challenger must never displace a live incumbent even when the floor
+  # collapsed to 0 (site down while internet up) — hence the second clause.
+  if [[ -n $home ]] && (( best_kbps < floor || best_kbps <= 0 )); then
+    # Nobody beat the incumbent — go home, and SAY so: a dance that opens with
+    # "evaluating networks" and ends in silence reads as a hang on the dashboard.
+    connect_id "$home" && { enable_all
+      site_log OK "no challenger beat the incumbent - staying on $(dssid)" \
+                  "لم تتفوق أي شبكة - باقون على $(dssid)"
+      return 0; }
+  fi
+  [[ -n $best_id ]] || return 1
+  connect_id "$best_id" || return 1
+  enable_all
+  note_kbps "$best_kbps"   # the site cell must pair the NEW network with ITS number
+  site_log OK "connected: $(assoc_ssid) (upload ${best_kbps} kbps)" \
+              "اتصل بشبكة: $(dssid) (سرعة الرفع ${best_kbps} كيلوبت/ث)"
+}
+
+visible_known_by_signal() {  # visible_known_ids rows ordered strongest-air-first (signal mode)
+  local vis sssid _sig _sec key kid kssid seen=$'\n'
+  vis=$(visible_known_ids)
+  [[ -n $vis ]] || return 0
+  while IFS=$'\t' read -r sssid _sig _sec; do   # scan() is already sorted by signal
+    [[ -n $sssid ]] || continue
+    if [[ $BACKEND != wpa ]]; then key=$(iw2hex "$sssid"); else key=$sssid; fi
+    while IFS=$'\t' read -r kid kssid; do
+      [[ $kssid == "$key" ]] || continue
+      [[ $seen == *$'\n'"$kid"$'\n'* ]] && continue   # dual-band AP = one candidate
+      seen+="$kid"$'\n'
+      printf '%s\t%s\n' "$kid" "$kssid"
+    done <<<"$vis"
+  done < <(scan)
+}
+
+best_pref_id() {  # visible known network with a wpa-conf priority STRICTLY above the
+  # current one's; prints nothing when we already sit on the best (or have no data).
+  # (Deliberate reduction vs aasw: no cross-boot last-SSID file — the supplicant's
+  # SAVED PRIORITIES are the persistent memory; this check + enable_all carry us home.)
+  # Visibility = iw scan UNION the supplicant's own scan_results (the latter sees
+  # HIDDEN networks thanks to armed scan_ssid — same printf-encoded text, matches raw).
+  local cur="$1" cur_p=0 best="" best_p id ssid p vis iwn suppn now nmvis=""
+  now=$(date +%s)
+  if [[ $BACKEND != wpa ]]; then
+    # nm visibility = the hex intersection (NM's own directed probing already surfaces
+    # a correctly-configured hidden home; priorities are SIGNED -999..999).
+    nmvis=$(nm_visible_known_ids | cut -f1)
+  else
+    iwn=$(scan | cut -f1)
+    suppn=$(wpa scan_results | tail -n +2 | awk -F'\t' 'NF >= 5 { print $5 }')
+  fi
+  if [[ -n $cur ]]; then
+    cur_p=$(get_priority "$cur"); [[ $cur_p =~ ^-?[0-9]+$ ]] || cur_p=0
+  fi
+  best_p=$cur_p
+  while IFS=$'\t' read -r id ssid; do
+    [[ $id == "$cur" ]] && continue
+    [[ -n $PREF_VETO_ID && $id == "$PREF_VETO_ID" ]] && (( now < PREF_VETO_UNTIL )) && continue
+    vis=0
+    if [[ $BACKEND != wpa ]]; then
+      grep -qFx -- "$id" <<<"$nmvis" && vis=1
+    else
+      W="$ssid" awk '$0 == ENVIRON["W"] { f = 1; exit } END { exit !f }' <<<"$iwn" && vis=1
+      (( vis )) || { W="$ssid" awk '$0 == ENVIRON["W"] { f = 1; exit } END { exit !f }' <<<"$suppn" && vis=1; }
+    fi
+    (( vis )) || continue
+    p=$(get_priority "$id"); [[ $p =~ ^-?[0-9]+$ ]] || p=0
+    (( p > best_p )) && { best=$id; best_p=$p; }
+  done < <(known_ids)
+  dbg "best_pref_id: cur=$cur(p=$cur_p) -> best=${best:-none}(p=$best_p) veto=${PREF_VETO_ID:-none}"
+  [[ -n $best ]] && printf '%s' "$best"
+  return 0
+}
+
+apply_profile() {  # aasw's night mode: one date fork per tick, transition-only logging
+  [[ $NIGHT_MODE == "yes" ]] || return 0
+  local now s e p
+  now=$(( 10#0$(date +%H) * 60 + 10#0$(date +%M) ))  # 10#0: octal trap AND empty-date safe
+  s=$(( 10#${NIGHT_START%:*} * 60 + 10#${NIGHT_START#*:} ))
+  e=$(( 10#${NIGHT_END%:*} * 60 + 10#${NIGHT_END#*:} ))
+  if (( s > e )); then  # window wraps midnight
+    if (( now >= s || now < e )); then p=night; else p=day; fi
+  else
+    if (( now >= s && now < e )); then p=night; else p=day; fi
+  fi
+  [[ $p == "$PROFILE" ]] && return 0
+  PROFILE=$p
+  if [[ $p == night ]]; then
+    CUR_MIN_UP=$NIGHT_MIN_UP_KBPS; CUR_GAIN=$NIGHT_GAIN_PCT; CUR_COOLDOWN=$NIGHT_DANCE_COOLDOWN
+    site_log INFO "night profile active (floor ${NIGHT_MIN_UP_KBPS} kbps)" \
+                  "الوضع الليلي مفعل - معايير أهدأ"
+  else
+    CUR_MIN_UP=$MIN_UP_KBPS; CUR_GAIN=$SWITCH_GAIN_PCT; CUR_COOLDOWN=$DANCE_COOLDOWN
+    site_log INFO "day profile active (floor ${MIN_UP_KBPS} kbps)" \
+                  "الوضع النهاري مفعل"
+  fi
+}
+
+enable_stealth() {  # optional low observability; INPUT chain (aasw dropped its OWN
+  # outgoing pings by mistake); -C first: rc.local respawns must not stack rules.
+  # aasw's third leg (DHCP hostname hiding via dhclient.conf) is DROPPED: these
+  # images use dhcpcd, not dhclient — mask the hostname in /etc/dhcpcd.conf if wanted.
+  [[ $STEALTH_MODE == "yes" ]] || return 0
+  iptables -C INPUT -i "$IF" -p icmp --icmp-type echo-request -j DROP 2>/dev/null \
+    || iptables -I INPUT -i "$IF" -p icmp --icmp-type echo-request -j DROP 2>/dev/null || :
+  systemctl stop avahi-daemon 2>/dev/null || :
+  site_log INFO "stealth mode active (icmp hidden, avahi stopped)" \
+                "وضع التخفي مفعل"
+}
+
+# ------------------------------- the fight --------------------------------------
+ME_SINCE=0     # epoch when a ME-side wedge was first seen; healthy ticks clear it
+LINK_OK=0      # set by connect_id when association+DHCP worked THIS round — evidence
+               # gathered BEFORE any open-network teardown can poison the diagnosis
+PREF_VETO_ID="" PREF_VETO_UNTIL=0  # a preferred network that measured too slow is
+               # benched for 3 cooldowns — ends the pref-vs-dance switch war (proven)
+# Reporting doctrine: AWACS reports AS RICHLY as aasw did — every
+# meaningful event goes local AND to the site (Arabic), per event, not per streak;
+# offline events spool (SPOOL_CAP deep) and the whole story lands after recovery.
+
+fight() {  # no internet: escalate calmly, measure honestly, reboot only for OUR OWN wedge
+  local round nm_working=0 st alive=0 home_id=""
+  drop_open    # yesterday's crutch must not shadow today's real networks
+  enable_all
+  arm_hidden   # an EXTERNAL supplicant restart strips runtime scan_ssid — re-arm every engagement
+  if [[ $BACKEND != wpa ]]; then
+    NM_ERR=""; NM_RC=0; NM_AUTH=0   # fresh activation evidence for THIS fight
+    nm_wait_settled                  # never act while NM is mid-transition
+  fi
+  # A link whose gateway is reachable is ALIVE: the outage is upstream and a reassociate
+  # would only drop a working association (uploads, streams, LAN viewers) for nothing.
+  # Remember that network as HOME: the rounds still evaluate the others (a hotspot on
+  # another uplink may deliver), but failed tries end back on it. The skip is bounded to
+  # the streak's first fight - a router that answers ping yet forwards nothing for this
+  # station is cured by a fresh association, so the second fight performs it once.
+  if link_alive; then alive=1; home_id=$(current_id); fi
+  if (( alive && FIGHT_STREAK <= 1 )); then dbg "gentle open skipped: the link is alive (gateway reachable) - the outage is upstream"
+  else reassociate; fi
+  # Credit the verified moment (connect_id's doctrine, same words): a gentle heal
+  # that dies sub-tick must not leave a stale wedge streak for the reboot valve —
+  # this was the LAST net_up=1 site that could carry an uncredited stale stamp.
+  wait_ip && net_ok && { net_up=1; ME_SINCE=0; return 0; }
+
+  for round in 1 2 3; do
+    nm_working=0
+    if [[ $BACKEND != wpa ]]; then
+      # NM healed mid-fight (its autoconnect won while we slept/probed)? CREDIT AND
+      # EXIT with zero further overrides — an override here would stomp its success.
+      nm_wait_settled
+      net_ok && { net_up=1; ME_SINCE=0; return 0; }
+      # Deference is decided BEFORE any candidate probe: a con-up must never race a
+      # NM that is actively working the device (proven con-ups inside the band).
+      if nm_busy; then
+        nm_working=1
+        site_log INFO "NM is still trying - waiting it out" \
+                      "مدير الشبكة يحاول يتصل - ننتظره ولا نتدخل"
+      fi
+      # A busy sighting ANYWHERE in the streak means "still retrying" — never a
+      # wedge: the clock and the settled count start over from that moment.
+      if (( NM_SAW_BUSY )); then ME_SINCE=0; NM_SETTLED_SEEN=0; NM_SAW_BUSY=0; fi
+    fi
+    LINK_OK=0
+    if (( ! nm_working )); then
+      best_by_upload 0 "$home_id" && return 0   # home set = the incumbent is excluded and returned to
+    fi
+    # CLASSIFY BEFORE the crutches: their teardown (select/remove) drops our route
+    # and association, and diagnosing AFTER it framed every pure ISP outage as an
+    # internal wedge — a proven ~35min reboot CYCLE. Order is law.
+    # ME vs ISP, three tells for OUR side: a known network on the air we provably
+    # cannot ride (LINK_OK=0); a radio that sees NOTHING (healthy radios always see
+    # neighbors); or a MUTE supplicant (empty known list while the conf holds many —
+    # the one organ whose cure, restart dhcpcd, lives on rung L2).
+    # (nm_working was decided at the round top: NM owning the device mid-transition
+    # must NEVER read as an ME wedge — the anti-reboot-loop clause — so it takes
+    # the external branch verbatim.)
+    if (( ! nm_working )) && ! gw_ok && (( ! LINK_OK )) \
+         && { [[ -n $(visible_known_ids) ]] || [[ -z $(scan) ]] || [[ -z $(known_ids) ]]; }; then
+      if auth_failing; then
+        # Wrong password rides the SAME evidence signature as a wedge. The LADDER
+        # still runs (a real wedge can coincide with one stale hotspot password —
+        # skipping recovery entirely was a proven starvation), but the reboot clock
+        # stays UNARMED: no reboot on earth fixes credentials.
+        site_log ERROR "association refused - wrong password? (recovery continues, reboot stays off)" \
+                       "الشبكة رفضت الاتصال - كلمة سر خاطئة؟ (الإنعاش مستمر والريبوت ممنوع)"
+        # ACTIVE disarm, not just skip-arming: TEMP-DISABLED is a TIMED flag on a real
+        # supplicant (expires between rounds, wiped by an L2/L3 restart), so a no-flag
+        # instant could arm the clock and nothing would ever disarm it while the
+        # password stays wrong — a PROVEN credentials reboot. Credentials sighted =
+        # clock back to zero, every time.
+        ME_SINCE=0
+      else
+        # On NM the clock arms only once NM has provably GIVEN UP (settled 30/120,
+        # or the hosed-NM widening) — its own retries deserve the full window.
+        if [[ $BACKEND == wpa ]] || nm_me_settled; then
+          (( ME_SINCE == 0 )) && ME_SINCE=$(date +%s)
+        fi
+      fi
+      dbg "fight round $round: ME evidence (LINK_OK=0, gw unreachable, auth_failing=$(auth_failing && echo 1 || echo 0))"
+      # RUNG BOUNDARY (seen live in NetworkManager's journal): the evidence above takes
+      # ~12 s to gather; inside that window NM's own autoconnect had already ACTIVATED
+      # the home network, and L1 bounced the radio 5 s after "Activation: successful"
+      # — a needless outage of NM's own win (N13/§6 at the rung boundary). Let NM
+      # settle, credit a heal, and never fire a rung at a device NM reports connected.
+      if [[ $BACKEND != wpa ]]; then
+        nm_wait_settled
+        net_ok && { enable_all; net_up=1; ME_SINCE=0; return 0; }
+        st=$(nm_dev_state); nm_note_state "$st"
+        if (( (st >= 40 && st <= 90) || st == 110 )); then
+          # NM picked the device up again WHILE the evidence was gathered (a con-up
+          # that outlived -w, or its own autoconnect): the round-top rule applies here
+          # too — its activation finishes or fails on its own, never under a rung.
+          site_log INFO "NM is still trying - waiting it out" \
+                        "مدير الشبكة يحاول يتصل - ننتظره ولا نتدخل"
+          sleep 20; continue
+        fi
+        if (( st >= 100 && st < 110 )); then
+          # associated with an IP but no internet = the router's problem, not ours
+          ME_SINCE=0
+          site_log INFO "NetworkManager is connected, internet is not (round $round) — router-side, no rung" \
+                        "NetworkManager متصل والإنترنت مقطوع (جولة $round) — المشكلة عند الراوتر، لا إنعاش"
+          { try_safety || try_open; } && return 0
+          sleep 20; continue
+        fi
+      fi
+      recover "$round"
+      # Credit a heal the rung ITSELF produced — without this the same round hunted
+      # a crutch and parked the box on an open stranger beside the user's own healthy
+      # network, reporting it as a win (needed on both backends).
+      net_ok && { enable_all; net_up=1; ME_SINCE=0; return 0; }   # enable_all: the win law
+      { try_safety || try_open; } && return 0
+      enable_all   # a failed crutch must not leave the supplicant with zero enabled networks
+    else
+      ME_SINCE=0
+      site_log INFO "outage looks external (round $round) — waiting, not rebooting" \
+                    "الانقطاع يبدو خارجياً (جولة $round) — ننتظر بلا إعادة تشغيل"
+      net_ok && { enable_all; net_up=1; return 0; }   # healed meanwhile — re-arm all, then leave
+      { try_safety || try_open; } && return 0
+      # Failed tries end back HOME (the live link), never parked on a stranger or with
+      # zero enabled networks through the wait: the upstream may return any second.
+      if [[ -n $home_id ]]; then connect_id "$home_id" >/dev/null 2>&1 || :; fi
+      enable_all
+      sleep 20
+    fi
+  done
+
+  if (( ME_SINCE > 0 && $(date +%s) - ME_SINCE >= REBOOT_AFTER_MIN * 60 )) \
+     && { [[ $BACKEND == wpa ]] || nm_me_settled; }; then
+    # Local-only by physics: the net is down (nothing sends) and a spooled copy would
+    # die with the reboot (tmpfs). The site learns of the reboot from the boot story.
+    llog ERROR "wedged ${REBOOT_AFTER_MIN}min with networks visible — rebooting (repeats per streak until cured)" \
+               "متعطّل ${REBOOT_AFTER_MIN} دقيقة مع شبكات ظاهرة — إعادة تشغيل (تتكرر مع كل سلسلة حتى الشفاء)"
+    sync; sleep 2; reboot
+  fi
+  # A LOSING fight's last act was a crutch teardown that left the supplicant with
+  # zero enabled networks — hand it back its full autonomy before returning, so a
+  # dead-AWACS window between engagements can never strand the box (proven gap).
+  enable_all
+  return 1
+}
+
+# ------------------------------- daemon ----------------------------------------
+main() {
+  site_log INFO "AWACS ${VERSION} starting on ${IF} (device $(device_id))" \
+                "أواكس ${VERSION} بدأ العمل على ${IF}"
+  log INFO "reporting: ${LOG_TARGET}${SITE_URL:+ -> ${SITE_URL}} | probe: $(probe_on && probe_url || echo 'none - signal mode') | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}"
+  (( LT_DOWNGRADED )) && log WARN "LOG_TARGET asked for the site but SITE_URL is empty - running local-only"
+  # detect_if's wlan0 fallback can name an interface that does not exist (dead radio,
+  # unplugged USB dongle) — say so ONCE in the log instead of fighting a ghost silently.
+  iw dev "$IF" info >/dev/null 2>&1 \
+    || site_log ERROR "interface ${IF} not present - is the WiFi hardware alive?" \
+                      "واجهة الواي فاي ${IF} غير موجودة - العتاد سليم؟"
+  check_tools
+
+  # Backend verdicts (detect_backend ran at dispatch): wpa = legacy pillar, untouched;
+  # nm = full capability as NM's SUPERVISOR; nm_lame = the only monitor-only mode left.
+  if [[ $BACKEND == nm_lame ]]; then
+    site_log ERROR "NetworkManager image but AWACS cannot drive it (unmanaged/no nmcli) - monitoring only" \
+                   "النظام على NetworkManager بس أواكس ما يقدر يتحكم فيه (الكرت خارج الإدارة أو nmcli ناقص) - نراقب بس"
+    # Parked, not dead: the boot story must still reach the dashboard (it spooled —
+    # nothing had flushed it), and the ONE tool whose absence caused this (nmcli)
+    # still gets its single install attempt. Same 300s cadence, no new loop.
+    while :; do
+      if have_net; then net_up=1; flush_spool; install_tools; fi
+      # Lame ONLY because nmcli was missing and the install just landed it? Exit —
+      # the rc.local respawn re-detects and comes back as a full nm supervisor.
+      # (Never for the unmanaged verdict: nmcli exists there, exiting would cycle.)
+      # (only under the rc.local respawn lane: the -d compat lane has no respawner,
+      # so exiting there would end the daemon for good)
+      if [[ ${NM_LAME_REASON:-} == nocli && -z ${AWACS_DAEMONIZED:-} ]] && command -v nmcli >/dev/null 2>&1; then
+        site_log OK "nmcli is now installed - restarting as a full NetworkManager supervisor" \
+                    "تم تنزيل nmcli - يعاد التشغيل بكامل القدرات"
+        sleep 5; exit 0
+      fi
+      sleep 300
+    done
+  fi
+  [[ $BACKEND == nm ]] && site_log INFO "NetworkManager backend - AWACS supervises it (full capability)" \
+                                        "النظام يستخدم NetworkManager - أواكس يشتغل معه بكامل قدراته"
+
+  rfkill unblock wifi 2>/dev/null || :  # a box that BOOTS soft-blocked must not wait a fight cycle
+  [[ $BACKEND != wpa ]] && { nmcli radio wifi on >/dev/null 2>&1 || :; }  # NM owns soft-rfkill
+  iw dev "$IF" set power_save off 2>/dev/null || :  # carried over from aasw: shaves 100-300ms off latency
+  enable_stealth
+  pgrep -f /usr/local/bin/aasw >/dev/null 2>&1 \
+    && site_log WARN "aasw.sh is still running - two WiFi authorities will fight; remove its rc.local line" \
+                     "aasw القديم لا يزال يعمل - سلطتان تتصارعان؛ احذف سطره من rc.local"
+  # Reap a dead predecessor's crutch: the marker survives the crash (crash-proof
+  # lifecycle); the nm arm adds the name-prefix sweep + /run glob belt.
+  reap_crutches
+  enable_all
+  arm_hidden   # hidden networks are common — without directed probes they never appear
+
+  local fails=0 strikes=0 flow here home_id last_dance=0 last_pref=0 pref_hits=0 \
+        cur_id cand_id ok_ticks=0 engaged=0 online=0
+  # Boot aggression (aasw parity): no internet on arrival = fight NOW, not after the
+  # NET_FAIL_TICKS grace. fight() opens GENTLY (reassociate + wait_ip, skipped while the
+  # link is alive) so a supplicant mid-association is waited for, not torn down.
+  # A predecessor killed MID-FLUSH left its snapshot orphaned — rescue it in front
+  # of any fresh lines (a few re-sent lines beat a silently amputated story).
+  if [[ -s ${SPOOL}.sending ]]; then
+    cat "${SPOOL}.sending" "$SPOOL" 2>/dev/null >"${SPOOL}.t" || :
+    mv -f "${SPOOL}.t" "$SPOOL" 2>/dev/null || :
+    rm -f "${SPOOL}.sending"
+  fi
+  if have_net; then net_up=1; flush_spool  # a respawn delivers its predecessor's story
+  else FIGHT_STREAK=1; fight || engaged=1; fi  # a LOSING boot fight arms the flag: a heal landing
+                               # before fails ripens must still say "restored"
+  while :; do
+    apply_profile
+    # THE VERDICT. The quick ladder (one ping on a healthy tick, as always); a failure
+    # while the device itself kept sending earns one patient look (net_verdict). On the
+    # engagement tick - while the LINK is alive (gateway reachable) and no patient look has
+    # already failed in this streak - one more patient look before any teardown: a short
+    # upstream blip that just ended must not start a recovery. A dead link (no gateway), and
+    # a link that already failed a patient look, engage on the third failed check as before.
+    online=0
+    if net_verdict; then online=1
+    elif (( fails + 1 == NET_FAIL_TICKS && ! PATIENT_FAILED )) && link_alive && net_patient; then
+      online=1
+      llog INFO "internet answers late, not never - slow link, no recovery (${NET_FAIL_TICKS} quick checks timed out)" \
+                "الإنترنت يجيب متأخراً لا معدوماً - الوصلة بطيئة، لا حاجة للإنعاش (${NET_FAIL_TICKS} فحوصات سريعة انتهت مهلتها)"
+    fi
+    if (( online )); then
+      net_up=1; fails=0; ME_SINCE=0; FIGHT_STREAK=0; PATIENT_FAILED=0
+      NM_L3_SPENT=0; NM_RC8=0; NM_SETTLED_SEEN=0; NM_SAW_BUSY=0   # healthy tick = the streak
+                                                                  # and ALL its NM evidence die
+      # A short outage can heal BETWEEN fights — the recovery must still be told
+      # (proven silent path: fight fails, next tick finds the net back, nobody speaks).
+      if (( engaged )); then
+        engaged=0; strikes=0   # same hysteresis reset as the fight-success join
+        site_log OK "internet restored: $(dssid)" "رجع الانترنت عبر: $(dssid)"
+      fi
+      # Drain the spool after ~30s of PROVEN health — a just-healed link should carry
+      # frames before it carries history — then retry every ~5min while lines remain
+      # (a site-down-while-internet-up phase must not park the spool forever).
+      (( ++ok_ticks == 3 || (ok_ticks > 3 && ok_ticks % 30 == 0) )) && flush_spool
+      (( ok_ticks == 3 )) && install_tools   # first PROVEN-healthy moment, once per boot
+      # WiFi cell heartbeat every ~60s (battery cadence) — backgrounded, lock-free.
+      if (( ok_ticks % 6 == 1 )); then { report_wifi; } 9>&- & fi
+      # Back on a real network? The crutch (open or emergency) has served — retire it.
+      # cur_id must be NON-EMPTY: a momentarily mute wpa_cli returns "", and "" != id
+      # would tear the crutch down while we still ride it (proven false-retire class).
+      if [[ -n $OPEN_ID ]]; then
+        cur_id=$(current_id)
+        [[ -n $cur_id && $cur_id != "$OPEN_ID" ]] && drop_open
+      fi
+      # Passive upload QA — three gates keep it honest: kernel counters only; NEVER
+      # while a live viewer runs (its own rate sits in the band and a probe/dance
+      # would stutter it — the stream IS the meter); and a dance cooldown, because
+      # every dance disrupts real traffic to measure it. Deliberate reduction vs
+      # aasw: no upgrade-hunting while the link is ADEQUATE (aasw jumped to any
+      # >1.5x-faster network) — the never-break-a-working-link law forbids that
+      # greed; we look around only when provably suffering.
+      if streaming; then
+        # OPPORTUNISTIC METER (doctrine: "the live stream IS a free upload
+        # meter"): while real traffic flows, its kernel-counter rate is the
+        # measurement — no probe, no extra task, zero cost. A HEALTHY stream
+        # (flow >= STREAM_MIN_KBPS) proves the link carries its job: never touch
+        # it. A STARVING one is already broken for the viewer — only then does
+        # evaluation become allowed, and even then one honest probe (here=) gets
+        # the veto before any switch (a small very-low-quality feed reads slow
+        # while the link is fine; the probe clears that false alarm).
+        flow=$(tx_kbps)
+        dbg "QA(stream): flow=${flow} kbps, strikes=${strikes}"
+        # probe_on: without a probe target a starving stream cannot be told from a
+        # small feed (the probe is what clears that false alarm) — signal mode never dances
+        if probe_on && (( flow >= 5 && flow < STREAM_MIN_KBPS )); then
+          if (( ++strikes >= UP_STRIKES && $(date +%s) - last_dance >= CUR_COOLDOWN )); then
+            strikes=0; last_dance=$(date +%s)
+            site_log WARN "live stream starving (${flow} kbps) - evaluating known networks" \
+                          "البث يعاني (${flow} كيلوبت/ث) - جاري تقييم الشبكات"
+            here=$(up_kbps); note_kbps "$here"
+            if (( here < CUR_MIN_UP )); then
+              home_id=$(current_id)
+              best_by_upload $(( here * CUR_GAIN / 100 )) "${home_id:-}" || enable_all
+            fi
+          fi
+        else
+          strikes=0
+        fi
+      else
+        flow=$(tx_kbps)
+        dbg "QA: flow=${flow} kbps, strikes=${strikes}, profile=${PROFILE:-day}"
+        if probe_on && (( flow >= 20 && flow < CUR_MIN_UP )); then   # signal mode: no QA
+          if (( ++strikes >= UP_STRIKES && $(date +%s) - last_dance >= CUR_COOLDOWN )); then
+            strikes=0; last_dance=$(date +%s)
+            # A committed dance CAN outlast the site's 55s online window — the
+            # dashboard may show a brief offline blink. Accepted: the dance only
+            # ever runs when uploads are ALREADY suffering, never under a viewer.
+            site_log WARN "sustained slow upload (${flow} kbps) - evaluating known networks" \
+                          "رفع بطيء مستمر (${flow} كيلوبت/ث) - جاري تقييم الشبكات"
+            here=$(up_kbps); note_kbps "$here"  # honest baseline BEFORE leaving the incumbent
+            if (( here < CUR_MIN_UP )); then
+              home_id=$(current_id)
+              best_by_upload $(( here * CUR_GAIN / 100 )) "${home_id:-}" || enable_all
+            fi
+          fi
+        else
+          strikes=0
+        fi
+      fi
+      # Preferred-network return (aasw's upgrade-seeking, the metered-hotspot escape):
+      # a fight can strand us on a low-priority network (a hotspot burning data) after
+      # the home router returns. Every PREF_CHECK, if a strictly higher-priority known
+      # network is visible for TWO consecutive checks (20min stability — no flapping),
+      # go home; if home does not deliver, fall straight back. Zero traffic to look.
+      if ! streaming && (( $(date +%s) - last_pref >= PREF_CHECK )); then
+        last_pref=$(date +%s)
+        # Supplicant-side scan first: armed scan_ssid makes DIRECTED probes, so a
+        # HIDDEN home network becomes visible to the pref check (iw's broadcast scan
+        # never shows it — the exact escape this feature exists for was blind to it).
+        pref_prescan
+        cur_id=$(current_id)
+        cand_id=$(best_pref_id "${cur_id:-}")
+        if [[ -n $cand_id ]]; then
+          if (( ++pref_hits >= 2 )); then
+            pref_hits=0
+            site_log INFO "higher-priority network visible - trying to go home" \
+                          "شبكة أعلى أولوية ظاهرة - نحاول الرجوع للبيت"
+            if connect_id "$cand_id"; then
+              # MEASURE ON ARRIVAL — priority alone must never overrule the measured-
+              # upload law: a slow home gets benched 3 cooldowns and we go straight
+              # back (this ended the proven pref-vs-dance 20-minute switch war).
+              here=$(up_kbps); probe_on && note_kbps "$here"
+              if probe_on && (( here < CUR_MIN_UP )); then
+                site_log WARN "preferred network too slow (${here} kbps) - benching it, going back" \
+                              "الشبكة المفضلة بطيئة (${here} كيلوبت/ث) - نرجّعها للاحتياط ونعود"
+                PREF_VETO_ID=$cand_id; PREF_VETO_UNTIL=$(( $(date +%s) + CUR_COOLDOWN * 3 ))
+                { [[ -n ${cur_id:-} ]] && connect_id "$cur_id"; } || :
+                enable_all
+              else
+                enable_all
+                site_log OK "returned to preferred network: $(dssid) ($(up_words "$here"))" \
+                            "رجع للشبكة المفضلة: $(dssid) ($(up_words_ar "$here"))"
+              fi
+            else
+              { [[ -n ${cur_id:-} ]] && connect_id "$cur_id"; } || :
+              enable_all
+            fi
+          fi
+        else
+          pref_hits=0
+        fi
+      fi
+    else
+      net_up=0; ok_ticks=0
+      if (( ++fails >= NET_FAIL_TICKS )); then
+        engaged=1
+        # Announce the LOSS on the transition tick ONLY — later fights in the same
+        # outage tell their own story (rounds, rungs, candidates); re-shouting "lost"
+        # per attempt drowned the outage's opening timestamp out of the spool cap.
+        (( fails == NET_FAIL_TICKS )) \
+          && site_log WARN "internet lost on ${IF} - engaging" \
+                           "انقطع الانترنت - بدأ القتال للرجوع"
+        (( ++FIGHT_STREAK ))
+        fight && { fails=0; engaged=0; strikes=0
+                   # strikes=0: a fight usually lands on a DIFFERENT network — old
+                   # strikes must not collapse the new link's 3-sample hysteresis.
+                   site_log OK "internet restored: $(dssid)" \
+                               "رجع الانترنت عبر: $(dssid)"; }
+      fi
+    fi
+    sleep "$TICK"
+  done
+}
+
+# ------------------------------- toolbox ----------------------------------------
+# TUI palette — aasw's visual language (frame 1;37, banner 1;41, warn 1;33,
+# ok 1;32, accent 1;36). Closed boxes carry STATIC ASCII titles only (guaranteed
+# alignment); dynamic bilingual content rides open-right colored rows — dynamic
+# Arabic inside a closed frame misaligns.
+readonly C0=$'\033[0m' CW=$'\033[1;37m' CT=$'\033[1;41m' CY=$'\033[1;33m' \
+         CG=$'\033[1;32m' CC=$'\033[1;36m' CR=$'\033[1;31m'
+tui_hdr() {  # $1 = ASCII title, padded into the 45-column frame
+  echo
+  echo -e "${CW}┌─────────────────────────────────────────────┐${C0}"
+  printf '%b│%b%-45s%b│%b\n' "$CW" "$CT" " $1" "${C0}${CW}" "$C0"
+  echo -e "${CW}└─────────────────────────────────────────────┘${C0}"
+}
+tui_row() { printf '  %b%-9s%b   %s\n' "$CY" "$1" "$C0" "$2"; }  # LABEL VALUE (3-space
+# gap = the "✓ "/"✗ " width, so plain values line up with verdict values in one column)
+tui_ok()  { printf '  %b%-9s%b %b✓ %s%b\n' "$CY" "$1" "$C0" "$CG" "$2" "$C0"; }
+tui_bad() { printf '  %b%-9s%b %b✗ %s%b\n' "$CY" "$1" "$C0" "$CR" "$2" "$C0"; }
+dlist() {  # DISPLAY filter: decode the SSID column of tab-separated tool output so
+  # Arabic network names read as Arabic, in FIXED columns (raw tabs jumped in
+  # ragged 8-col steps). $1 = stream width: 3+ pads the name and '-' marks a fully
+  # empty tail (a belt only — real list_networks always fills bssid); 2 = name is
+  # last, no padding. printf pads by BYTES, so the pad width is widened by
+  # (bytes - chars) to keep multi-byte Arabic rows in the same column — correct on
+  # any UTF-8 terminal (the Pi OS default); a C locale merely falls back to the
+  # old ragged view. Display only — matching NEVER sees any of this.
+  local mode=${1:-3} a b rest s pad
+  while IFS=$'\t' read -r a b rest; do
+    s=$(pssid "$b")
+    if (( mode >= 3 )); then
+      pad=$(( 24 + $(printf %s "$s" | wc -c) - ${#s} ))
+      printf "  %-3s %-${pad}s %s\n" "$a" "$s" "${rest:--}"
+    else
+      printf '  %-3s %s\n' "$a" "$s"
+    fi
+  done
+}
+
+cli() {  # the manual toolbox — runs BESIDE the daemon (no lock taken)
+  local AWACS_CLI=1  # dynamic scope: callees (scan) keep their warnings LOCAL —
+                     # a hand-run command must not append to the daemon's site story
+  case "$1" in
+    status)
+      tui_hdr "AWACS ${VERSION} STATUS"
+      tui_row ""        "(الفحص حي — لحظات، وقد يصل ~15 ثانية إذا كان النت مقطوعاً)"
+      tui_row "device"  "$(device_id) on ${IF}"
+      tui_row "backend" "$BACKEND / نظام إدارة الشبكة"
+      local dpid=""
+      [[ -s $LOCK ]] && read -r dpid <"$LOCK" 2>/dev/null
+      # cmdline must actually SAY awacs: after a crash the PID can be reused by any
+      # process, and a bare -d check would call a stranger our daemon (PID-reuse lie).
+      if [[ $dpid =~ ^[0-9]+$ && -d /proc/$dpid ]] \
+         && grep -aq awacs "/proc/$dpid/cmdline" 2>/dev/null; then
+        tui_ok  "daemon"  "running (pid $dpid) / الحارس يعمل"
+      else
+        tui_bad "daemon"  "NOT running / الحارس متوقف"
+      fi
+      local nssid sig ipa
+      nssid=$(dssid)
+      tui_row "network" "${nssid:--}"
+      sig=$(iw dev "$IF" link 2>/dev/null | sed -n 's/^[[:space:]]*signal: //p' | head -1)
+      tui_row "signal"  "${sig:--} / قوة الإشارة"
+      ipa=$(ip -4 addr show dev "$IF" scope global 2>/dev/null | awk '/inet /{print $2; exit}')
+      tui_row "ip"      "${ipa:--}"
+      if gw_ok;     then tui_ok  "gateway"  "reachable / الراوتر يرد"
+                    else tui_bad "gateway"  "NOT reachable / الراوتر لا يرد"; fi
+      if have_net;  then tui_ok  "internet" "ONLINE / متصل"
+                    else tui_bad "internet" "OFFLINE / مقطوع"; fi
+      if streaming; then tui_row "viewer"   "live - QA on hold / مشاهد نشط"
+                    else tui_row "viewer"   "none / لا مشاهد"; fi
+      tui_row "upload"  "$(tx_kbps) kbps flowing (3s kernel sample)"
+      echo
+      ;;
+    networks)
+      tui_hdr "STORED NETWORKS"
+      local stored visnow
+      if [[ $BACKEND != wpa ]]; then
+        # SRC labels awacs ONLY via nm_del_own's own double test (name regex AND /run
+        # filename) — everything else is owner, so the user can SEE at a glance that
+        # their profiles are untouched, whatever their shape.
+        echo -e "  ${CC}المخزنة (uuid / name / prio / auto / src):${C0}"
+        local nuuid ntype nname nprio nauto nrow nfile nsrc nlist npad nrows=0
+        nlist=$(nmcli -t -f UUID,FILENAME connection show 2>/dev/null)   # listed ONCE
+        while IFS=: read -r nuuid ntype; do
+          [[ $ntype == wifi || $ntype == 802-11-wireless ]] || continue
+          (( ++nrows ))
+          nname=$(nmcli -e no -g connection.id connection show uuid "$nuuid" 2>/dev/null | tr -d '\000-\037\177')
+          nprio=$(get_priority "$nuuid"); [[ $nprio =~ ^-?[0-9]+$ ]] || nprio=0
+          nauto=$(nmcli -g connection.autoconnect connection show uuid "$nuuid" 2>/dev/null)
+          nrow=$(U="$nuuid" awk -F: '$1 == ENVIRON["U"] { print; exit }' <<<"$nlist")
+          nfile=${nrow#*:}
+          nsrc=owner
+          if [[ $nname =~ ^awacs-(crutch|safety)-[0-9]+-[0-9]+$ \
+                && $nfile == /run/NetworkManager/system-connections/awacs-* ]]; then nsrc=awacs; fi
+          # byte-aware pad (dlist's law): printf pads bytes, Arabic names are 2 bytes/char;
+          # 32 = the SSID maximum, and our own crutch names (>=25 chars) fit too
+          npad=$(( 32 + $(printf %s "$nname" | wc -c) - ${#nname} ))
+          printf "  %-8s %-${npad}s %-5s %-4s %s\n" "${nuuid:0:8}" "$nname" "$nprio" "$nauto" "$nsrc"
+        done < <(nmcli -t -f UUID,TYPE connection show 2>/dev/null)
+        # placeholder keyed on WIFI rows printed (an ethernet-only box has profiles but
+        # no wifi ones — the old "$nlist non-empty" test left the section blank)
+        (( nrows )) || echo "  (لا شبكات مخزنة)"
+        echo -e "  ${CC}المرئية الآن (uuid / name):${C0}"
+        visnow=$(visible_known_ids)
+        if [[ -n $visnow ]]; then
+          while IFS=$'\t' read -r nuuid _; do
+            printf '  %-8s %s\n' "${nuuid:0:8}" "$(disp_ssid "$nuuid" "")"
+          done <<<"$visnow"
+        elif ! command -v nmcli >/dev/null 2>&1 || [[ $BACKEND == nm_lame ]]; then
+          echo "  (nmcli غير متوفر أو الكرت خارج إدارة NetworkManager — لا قراءة ممكنة)"
+        else
+          echo "  (لا شبكة مخزنة ظاهرة الآن — المسح فارغ أو الشبكات بعيدة)"
+        fi
+        echo
+        exit 0
+      fi
+      stored=$(wpa list_networks | tail -n +2)
+      visnow=$(visible_known_ids)
+      echo -e "  ${CC}المخزنة (id / name / bssid / flags):${C0}"
+      if [[ -n $stored ]]; then dlist 3 <<<"$stored"
+      else echo "  (لا شبكات مخزنة)"; fi
+      echo -e "  ${CC}المرئية الآن (id / name):${C0}"
+      if [[ -n $visnow ]]; then dlist 2 <<<"$visnow"
+      else echo "  (لا شبكة مخزنة ظاهرة الآن — المسح فارغ أو الشبكات بعيدة)"; fi
+      echo
+      ;;
+    evaluate)  # ranked view: CUR ID PRIO SIG SEC SSID (no guessed speeds — the
+      # signal-to-speed estimation is banned by design; measured kbps lives in logs)
+      tui_hdr "NETWORK EVALUATION"
+      echo -e "  ${CC}الشبكات المرئية الآن — الأقوى أولاً / strongest first:${C0}"
+      local ssid sig sec id p cur mark ids rows=0 vis inv="" kn air
+      cur=$(current_id)
+      kn=$(known_ids)          # ONE listing for the whole screen (nm: each call is
+                               # (profiles+1) nmcli spawns — per-row calls stalled a Zero)
+      air=$(scan)              # ONE radio picture for BOTH halves of the screen
+      printf '%-4s %-8s %-5s %-8s %-5s %s\n' "CUR" "ID" "PRIO" "SIGNAL" "SEC" "SSID"
+      while IFS=$'\t' read -r ssid sig sec; do
+        [[ -n $ssid ]] || continue
+        # ALL stored ids for this name (two ids can share one SSID): star + PRIO follow
+        # the CURRENT id when it is among them, else the first — display never lies.
+        if [[ $BACKEND != wpa ]]; then
+          ids=$(W="$(iw2hex "$ssid")" awk -F'\t' '$2 == ENVIRON["W"] { print $1 }' <<<"$kn")
+        else
+          ids=$(W="$ssid" awk -F'\t' '$2 == ENVIRON["W"] { print $1 }' <<<"$kn")
+        fi
+        id=""; mark=""; p="-"
+        if [[ -n $ids ]]; then
+          id=$(head -1 <<<"$ids")
+          [[ -n ${cur:-} ]] && grep -qFx "$cur" <<<"$ids" && { mark="*"; id=$cur; }
+          p=$(get_priority "$id"); [[ $p =~ ^-?[0-9]+$ ]] || p=0
+        fi
+        printf '%-4s %-8s %-5s %-8s %-5s %s\n' "$mark" "${id:0:8}" "$p" "$sig" "$sec" "$(pssid "$ssid")"
+        (( ++rows ))
+      done <<<"$air"
+      (( rows )) || echo "  (لا شبكات مرئية — المسح فارغ أو الراديو ما زال يبدأ)"
+      # Stored-but-invisible tail: "why is my network unused?" should not need a
+      # second command to reveal that it is simply not on the air right now. Built
+      # from the SAME picture the table used (nm's own list once contradicted it).
+      local gid gvis=$'\n' gall=$'\n'
+      if [[ $BACKEND != wpa ]]; then
+        vis=$(while IFS=$'\t' read -r ssid _; do [[ -n $ssid ]] && { iw2hex "$ssid"; echo; }; done <<<"$air")
+      else
+        vis=$(cut -f1 <<<"$air")
+      fi
+      # per PROFILE: a uuid is "invisible" only when NONE of its key rows is on the air
+      # (an ambiguous 0x profile has two rows — the table above may show it via one)
+      while IFS=$'\t' read -r gid ssid; do
+        [[ -n $gid ]] || continue
+        grep -qFx -- "$ssid" <<<"$vis" && gvis+="$gid"$'\n'
+      done <<<"$kn"
+      while IFS=$'\t' read -r gid ssid; do
+        [[ -n $gid ]] || continue
+        [[ $gvis == *$'\n'"$gid"$'\n'* || $gall == *$'\n'"$gid"$'\n'* ]] && continue
+        gall+="$gid"$'\n'
+        inv+="$(disp_ssid "$gid" "$ssid") "
+      done <<<"$kn"
+      [[ -n $inv ]] && echo -e "  ${CY}مخزنة غير ظاهرة الآن:${C0} $inv"
+      echo
+      ;;
+    scan)
+      tui_hdr "RAW SCAN"
+      local sout; sout=$(scan)
+      if [[ -n $sout ]]; then printf '%s\n' "$sout"
+      else echo "  (المسح فارغ أو فشل — الراديو مشغول أو ما زال يبدأ، جرّب بعد لحظات)"; fi
+      [[ $BACKEND != wpa ]] && echo "  (nm يمسح لوحده بالتوازي — كاش iw هنا قد يتأخر ثواني، للعرض فقط)"
+      echo
+      ;;
+    speed)
+      tui_hdr "UPLOAD SPEED PROBE"
+      if probe_on; then
+        tui_row "probing" "${PROBE_KB}KB -> $(probe_url) ..."
+        local kb; kb=$(up_kbps)
+        if (( kb > 0 )); then tui_ok  "upload" "${kb} kbps / سرعة الرفع الفعلية"
+        else                  tui_bad "upload" "0 kbps — probe failed / القياس فشل أو الموقع لا يرد"; fi
+      else
+        tui_bad "upload" "no probe target (signal mode) / لا هدف للقياس: اضبط SITE_URL أو PROBE_URL"
+      fi
+      echo
+      ;;
+    check) if have_net; then echo "internet: OK"; exit 0; else echo "internet: DOWN"; exit 1; fi ;;
+    help)
+      tui_hdr "AWACS ${VERSION} - COMMANDS"
+      echo -e "  ${CC}بدون وسيطة = الحارس (يشغّله rc.local) / no argument = the daemon${C0}"
+      tui_row "status"   "حالة الشبكة والحارس الآن / live network + daemon state"
+      tui_row "networks" "الشبكات المخزنة والمرئية / stored vs visible networks"
+      tui_row "evaluate" "جدول مرتب بالقوة والأولوية / ranked network table"
+      tui_row "scan"     "مسح خام / raw scan (cached ${SCAN_TTL}s)"
+      tui_row "speed"    "قياس سرعة الرفع الفعلية / one real upload probe"
+      tui_row "check"    "فحص الإنترنت للسكربتات / exit-coded internet check (plain output)"
+      tui_row "-d"       "تشغيل بالخلفية / self-daemonize (compat; -q accepted, no-op)"
+      echo
+      ;;
+    *) echo "usage: awacs.sh [status|networks|evaluate|scan|speed|check|help|-d]   (no argument = daemon)"; exit 1 ;;
+  esac
+  exit 0
+}
+
+# ------------------------------- dispatch ---------------------------------------
+# Rootless fast lane: `check` (exit-coded internet probe for scripts/cron) and `help`
+# need neither root nor a resolved interface — gating them behind root made check's
+# exit 1 mean two different things (proven confusion).
+case "${1:-}" in
+  check|help|-h|--help) IF=wlan0 cli "${1/#-*/help}" ;;
+esac
+# A TYPO'D command must not hide behind the ROOT box: validate the word BEFORE the
+# root gate, so a forgotten sudo and a misspelled command stay distinguishable.
+case "${1:-}" in
+  ""|-q|--quiet|-d|--daemon|status|networks|evaluate|scan|speed) : ;;
+  *) echo "usage: awacs.sh [status|networks|evaluate|scan|speed|check|help|-d]   (no argument = daemon)"; exit 1 ;;
+esac
+require_root
+IF="${AWACS_IF:-$(detect_if)}"; readonly IF
+# The private state dir must exist before ANY runtime file (lock, scan cache, spool):
+# /run is tmpfs — recreated every boot, owned root, mode 700 (SSIDs are location data).
+install -d -m 700 "$RUN_DIR" 2>/dev/null || { mkdir -p "$RUN_DIR" && chmod 700 "$RUN_DIR"; } 2>/dev/null || :
+# Backend verdict (wpa / nm / nm_lame): read-only toolbox WORDS decide FAST (a
+# transiently-wrong verdict is harmless there); every daemon launch — bare, -d or
+# -q alike — waits out early boot properly (a fast -d once decided nm where the
+# rc.local launch decided nm_lame: two verdicts for one box).
+# The lane is decided from the WHOLE argv, skipping -q/--quiet, so "-q -d" and
+# "-q status" (old launch-line spellings) take the same lane as "-d -q" / "status".
+lane=patient
+for a in "$@"; do
+  case $a in
+    -q|--quiet) continue ;;
+    status|networks|evaluate|scan|speed) lane=fast ;;
+    -d|--daemon) [[ -z ${AWACS_DAEMONIZED:-} ]] && lane=fast ;;  # PARENT only hands off to
+  esac                                                            # setsid — the child pays once
+  break
+done
+unset a
+if [[ $lane == fast ]]; then detect_backend fast; else detect_backend; fi
+# Migration tripwire: under the nm family no code path may reach wpa_cli — a missed
+# call site must surface in the log instead of racing NM silently.
+if [[ $BACKEND != wpa ]]; then
+  wpa() { local IFS=' '; log ERROR "BUG: wpa_cli reached under $BACKEND backend: $*"; return 1; }
+  # (local IFS: "$*" joins with the FIRST IFS char — the global \n would split the line)
 fi
 
-# --------------------------
-# معالج الإشارات المحسن
-# --------------------------
+# Compat flags (old aasw launch lines must keep working). -d self-daemonizes via
+# setsid with a recursion guard — and BEFORE fd 9 exists, so no lock inheritance.
+while [[ ${1:-} == -* ]]; do
+  case "$1" in
+    -d|--daemon)
+      if [[ -z ${AWACS_DAEMONIZED:-} ]]; then
+        AWACS_DAEMONIZED=1 setsid "$0" -d >/dev/null 2>&1 </dev/null &
+        exit 0
+      fi ;;
+    *) : ;;  # -q/--quiet: logging is file-only by design — nothing to quiet
+             # (-h and unknown flags never reach here — dispatched/rejected above)
+  esac
+  shift
+done
+[[ -n ${1:-} ]] && cli "$1"
 
-# دالة التنظيف المحسنة
-cleanup_and_exit() {
-    local exit_code=${1:-0}
-    local signal_name=${2:-"MANUAL"}
-    
+# Daemon path only: take the single-instance lock. Append-open (9>>) so a LOSING
+# second instance can never truncate the winner's PID; the winner then rewrites it.
+exec 9>>"$LOCK"
+on_shutdown() {  # the GRACEFUL box — kept exactly as designed, spacing included
+  # IGNORE, not reset: a cgroup stop (systemd unit, system shutdown) delivers a second
+  # TERM to the group moments after the first — with the trap merely reset it killed
+  # the handler before enable_all ran (seen on every systemd stop). Ignored for the
+  # handler's few seconds, the goodbye and the safety both complete; exit 0 ends it.
+  trap '' INT TERM QUIT HUP
+  # First act, before the goodbye: a Ctrl+C landing MID-FIGHT (after a
+  # select_network narrowed the live supplicant) must hand back full autonomy.
+  enable_all 2>/dev/null || :
     echo
     echo -e "\033[1;37m┌─────────────────────────────────────────────┐\033[0m"
     echo -e "\033[1;37m│\033[1;44m    GRACEFUL SHUTDOWN | إيقاف تشغيل سلس      \033[0;37m│\033[0m"
     echo -e "\033[1;37m├─────────────────────────────────────────────┤\033[0m"
-    echo -e "\033[1;37m│ \033[1;33m⚠️  Signal: \033[0m$signal_name received                \033[1;37m │\033[0m"
-    echo -e "\033[1;37m│ \033[1;33m⚠️  إشارة: \033[0m$signal_name تم استلامها               \033[1;37m│\033[0m"
+    echo -e "\033[1;37m│ \033[1;33m    ⚠️  EN: \033[0mReceived interrupt signal       \033[1;37m │\033[0m"
+    echo -e "\033[1;37m│ \033[1;33m    ⚠️  AR: \033[0mتم استلام إشارة المقاطعة         \033[1;37m│\033[0m"
     echo -e "\033[1;37m├─────────────────────────────────────────────┤\033[0m"
-    echo -e "\033[1;37m│ \033[1;32m✓  \033[0mExiting gracefully | جاري الخروج بأمان \033[1;37m │\033[0m"
+    echo -e "\033[1;37m│ \033[1;32m ✓  \033[0mExiting gracefully | جاري الخروج بأمان \033[1;37m │\033[0m"
     echo -e "\033[1;37m└─────────────────────────────────────────────┘\033[0m"
     echo
-    
-    # تنظيف الملفات بشكل آمن
-    [[ -f "$LOCK_FILE" ]] && rm -f "$LOCK_FILE" 2>/dev/null
-    [[ -f "$PIDFILE" ]] && rm -f "$PIDFILE" 2>/dev/null
-    [[ -f "$SCAN_OUTPUT_TMP" ]] && rm -f "$SCAN_OUTPUT_TMP" 2>/dev/null
-    
-    exit $exit_code
+  exit 0
 }
-
-# معالجات إشارات محسنة لتجنب الحلقات اللا نهائية
-trap 'cleanup_and_exit 130 "SIGINT"' INT
-trap 'cleanup_and_exit 143 "SIGTERM"' TERM
-trap 'cleanup_and_exit 1 "SIGQUIT"' QUIT
-trap 'cleanup_and_exit 129 "SIGHUP"' HUP
-trap 'cleanup_and_exit 0 "EXIT"' EXIT
-
-# دالة للخروج عند وجود نسخة أخرى
-exit_instance_error() {
-    local running_pid="$1"
+trap on_shutdown INT TERM QUIT HUP  # HUP: a closing terminal deserves the same grace
+if ! flock -n 9; then
+  # The rc.local respawn loop must stay SILENT (contract). A HUMAN double-launch
+  # on a terminal gets the INSTANCE box — kept exactly as designed, spacing included.
+  if [[ -t 1 ]]; then
+    running_pid=$(head -1 "$LOCK" 2>/dev/null || echo "?")
     echo
     echo -e "\033[1;37m┌──────────────────────────────────────────────┐\033[0m"
     echo -e "\033[1;37m│\033[1;43m      INSTANCE ERROR | خطأ في تعدد النسخ      \033[0;37m│\033[0m"
@@ -713,2610 +2137,15 @@ exit_instance_error() {
     echo -e "\033[1;37m│ \033[1;31m✗  EN: \033[0mAnother instance is already running \033[1;37m  │\033[0m"
     echo -e "\033[1;37m│ \033[1;31m✗  AR: \033[0mهناك نسخة أخرى قيد التشغيل بالفعل    \033[1;37m │\033[0m"
     echo -e "\033[1;37m├──────────────────────────────────────────────┤\033[0m"
-    echo -e "\033[1;37m│ \033[1;36mℹ \033[0mPID: $running_pid | معرف العملية         \033[1;37m│\033[0m"
+    echo -e "\033[1;37m│ \033[1;36mℹ \033[0mPID: $running_pid | يُرجى إنهاء النسخة الأخرى أولاً \033[1;37m│\033[0m"
     echo -e "\033[1;37m└──────────────────────────────────────────────┘\033[0m"
     echo
-    
-    trap - EXIT INT TERM QUIT HUP
     exit 1
-}
-
-# ========================================
-# BASIC UTILITY FUNCTIONS - الدوال الأساسية
-# ========================================
-# يجب أن تكون هذه الدوال في المقدمة لأنها تُستخدم في الدوال الأخرى
-
-# دالة التسجيل الأساسية - CRITICAL: يجب أن تكون أولاً
-log_message() {
-    local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
-    local level=$1
-    local eng_msg=$2
-    local ar_msg=${3:-$eng_msg}
-
-    local log_level log_color
-    case $level in
-        "ERROR")
-            log_level="[ERROR]"
-            log_color="\033[1;31m"
-            ;;
-        "WARN")
-            log_level="[WARN]"
-            log_color="\033[1;33m"
-            ;;
-        "INFO")
-            log_level="[INFO]"
-            log_color="\033[1;36m"
-            ;;
-        "SUCCESS")
-            log_level="[SUCCESS]"
-            log_color="\033[1;32m"
-            level="INFO"
-            ;;
-        "DEBUG")
-            log_level="[DEBUG]"
-            log_color="\033[1;35m"
-            
-            if [[ "$DEBUG_MODE" != "yes" ]]; then
-                return 0
-            fi
-            ;;
-        *)
-            log_level="[INFO]"
-            log_color="\033[1;36m"
-            level="INFO"
-            ;;
-    esac
-
-    # Format message based on language preference | تنسيق الرسالة حسب تفضيل اللغة
-    local final_msg=""
-    case "$LANGUAGE" in
-        "en")
-            final_msg="$eng_msg"
-            ;;
-        "ar")
-            final_msg="$ar_msg"
-            ;;
-        "both")
-            if [[ "$ar_msg" != "$eng_msg" ]]; then
-                final_msg="$eng_msg | $ar_msg"
-            else
-                final_msg="$eng_msg"
-            fi
-            ;;
-        *)
-            final_msg="$eng_msg | $ar_msg"  # Default to both
-            ;;
-    esac
-    
-    local log_entry="$timestamp [$DEVICE_ID] $log_level $final_msg"
-    
-    # Console output with colors | إخراج وحدة التحكم بالألوان
-    if [[ "${VERBOSE:-true}" == "true" ]] && [[ "$level" != "DEBUG" || "$DEBUG_MODE" == "yes" ]]; then
-        echo -e "${log_color}$log_entry\033[0m"
-    fi
-    
-    # Local logging based on LOG_MODE | التسجيل المحلي حسب LOG_MODE
-    if [[ "$LOG_MODE" == "local" || "$LOG_MODE" == "both" ]]; then
-        echo "$log_entry" >> "$LOG_FILE" 2>/dev/null
-    fi
-    
-    # Update message variable for remote logging compatibility
-    local message="$log_entry"
-
-    # Remote logging if enabled | التسجيل البعيد إذا كان مفعلاً
-    if [[ "$LOG_MODE" == "remote" || "$LOG_MODE" == "both" ]] && [[ "$REMOTE_LOGGING" == "yes" && -n "$log" ]]; then
-        if [[ "$level" == "ERROR" || "$level" == "WARN" || "$level" == "SUCCESS" || "$level" == "INFO" ]]; then
-            curl -s --connect-timeout 3 --max-time 5 \
-                -d "file=awacs.log" \
-                -d "data=$message" \
-                "$log" >/dev/null 2>&1 &
-        fi
-    fi
-}
-
-# دالة bc_calc محسنة مع معالجة أفضل للأخطاء
-bc_calc() {
-    local expression="$*"
-    local result=""
-
-    [[ -z "$expression" ]] && { echo "0.00"; return 1; }
-
-    if command -v bc &>/dev/null; then
-        result=$(echo "scale=2; $expression" | bc -l 2>/dev/null)
-        
-        if [[ -n "$result" && "$result" != "nan" && "$result" =~ ^-?[0-9]*\.?[0-9]+$ ]]; then
-            printf "%.2f" "$result" 2>/dev/null || echo "0.00"
-            return 0
-        fi
-    fi
-    
-    result=$(awk "BEGIN { printf \"%.2f\", ($expression) }" 2>/dev/null)
-    
-    if [[ -n "$result" && "$result" != "nan" && "$result" =~ ^-?[0-9]*\.?[0-9]+$ ]]; then
-        echo "$result"
-        return 0
-    fi
-    
-    echo "0.00"
-    return 1
-}
-
-# دالة مقارنة الأرقام العشرية المحسنة
-compare_float() {
-    local a="$1"
-    local op="$2" 
-    local b="$3"
-    
-    [[ -z "$a" || -z "$op" || -z "$b" ]] && return 1
-    
-    a=$(echo "$a" | tr -d ' ')
-    b=$(echo "$b" | tr -d ' ')
-    
-    if ! [[ "$a" =~ ^-?[0-9]*\.?[0-9]+$ ]] || ! [[ "$b" =~ ^-?[0-9]*\.?[0-9]+$ ]]; then
-        return 1
-    fi
-    
-    case $op in
-        ">")  awk -v a="$a" -v b="$b" 'BEGIN { exit !(a > b) }' ;;
-        "<")  awk -v a="$a" -v b="$b" 'BEGIN { exit !(a < b) }' ;;
-        ">=") awk -v a="$a" -v b="$b" 'BEGIN { exit !(a >= b) }' ;;
-        "<=") awk -v a="$a" -v b="$b" 'BEGIN { exit !(a <= b) }' ;;
-        "==") awk -v a="$a" -v b="$b" 'BEGIN { exit !(a == b) }' ;;
-        "!=") awk -v a="$a" -v b="$b" 'BEGIN { exit !(a != b) }' ;;
-        *)    return 1 ;;
-    esac
-}
-
-# --------------------------
-# دوال مساعدة محسنة للأداء
-# --------------------------
-
-# ========================================
-# WIFI INTERFACE DETECTION - إدارة واجهات الواي فاي
-# ========================================
-# يجب أن تكون هذه الدالة قبل get_current_ssid لأنها تحدد WIFI_INTERFACE
-
-detect_wifi_interfaces() {
-    local interfaces_found=()
-    
-    while IFS= read -r interface; do
-        [[ -n "$interface" ]] && interfaces_found+=("$interface")
-    done < <(iw dev 2>/dev/null | awk '$1=="Interface"{print $2}')
-    
-    if [[ ${#interfaces_found[@]} -eq 0 ]]; then
-        while IFS= read -r interface; do
-            [[ -n "$interface" ]] && interfaces_found+=("$interface")
-        done < <(iwconfig 2>/dev/null | grep "IEEE 802.11" | awk '{print $1}')
-    fi
-
-    if [[ ${#interfaces_found[@]} -eq 0 ]]; then
-        log_message "ERROR" "No WiFi interfaces detected" "لم يتم اكتشاف أي واجهات لاسلكية"
-        return 1
-    fi
-
-    if [[ "$MULTI_INTERFACE" == "yes" && ${#interfaces_found[@]} -gt 1 ]]; then
-        log_message "INFO" "Multi-interface mode enabled. Available: ${interfaces_found[*]}" \
-                  "تم تفعيل الوضع المتعدد. المتاح: ${interfaces_found[*]}"
-        
-        local best_interface=""
-        local best_score=0
-        
-        for iface in "${interfaces_found[@]}"; do
-            local score=0
-            
-            if ip link show "$iface" 2>/dev/null | grep -q "UP"; then
-                ((score += 2))
-                
-                local connected_ssid=$(iwgetid "$iface" -r 2>/dev/null || echo "")
-                if [[ -n "$connected_ssid" ]]; then
-                    ((score += 3))
-                    
-                    local signal=$(iwconfig "$iface" 2>/dev/null | grep -o '\-[0-9]\+ dBm' | head -1 | tr -d ' dBm-')
-                    if [[ -n "$signal" && "$signal" -lt 70 ]]; then
-                        ((score += 1))
-                    fi
-                fi
-            fi
-            
-            if [[ $score -gt $best_score ]]; then
-                best_interface="$iface"
-                best_score=$score
-            fi
-        done
-        
-        WIFI_INTERFACE="${best_interface:-${interfaces_found[0]}}"
-        log_message "INFO" "Selected interface: $WIFI_INTERFACE (score: $best_score)" \
-                  "تم اختيار الواجهة: $WIFI_INTERFACE (النقاط: $best_score)"
-    else
-        WIFI_INTERFACE="${interfaces_found[0]}"
-        log_message "INFO" "Using single interface: $WIFI_INTERFACE" \
-                  "استخدام واجهة واحدة: $WIFI_INTERFACE"
-    fi
-
-    if ! iw dev "$WIFI_INTERFACE" info &>/dev/null; then
-        log_message "ERROR" "Selected interface $WIFI_INTERFACE is invalid" \
-                   "الواجهة المختارة $WIFI_INTERFACE غير صالحة"
-        return 1
-    fi
-
-    WPACONF="/etc/wpa_supplicant/wpa_supplicant.conf"
-    return 0
-}
-
-# دالة للحصول على SSID الحالي مع cache لتحسين الأداء - إصلاح تبعية WIFI_INTERFACE
-get_current_ssid() {
-    local current_time=$(date +%s)
-    
-    if [[ -n "$CURRENT_SSID_CACHE" && $((current_time - CURRENT_SSID_CACHE_TIME)) -lt $CACHE_VALIDITY_SECONDS ]]; then
-        echo "$CURRENT_SSID_CACHE"
-        return 0
-    fi
-    
-    # التأكد من وجود WIFI_INTERFACE - إصلاح ترتيب التبعيات
-    if [[ -z "$WIFI_INTERFACE" ]]; then
-        # اكتشاف تلقائي محسّن وآمن
-        local auto_iface=$(iw dev 2>/dev/null | awk '$1=="Interface"{print $2; exit}')
-        if [[ -z "$auto_iface" ]]; then
-            auto_iface=$(iwconfig 2>/dev/null | grep "IEEE 802.11" | awk '{print $1; exit}')
-        fi
-        
-        if [[ -n "$auto_iface" ]]; then
-            local ssid=$(iwgetid "$auto_iface" -r 2>/dev/null || echo "")
-        else
-            local ssid=""
-        fi
-    else
-        local ssid=$(iwgetid "$WIFI_INTERFACE" -r 2>/dev/null || echo "")
-    fi
-    
-    CURRENT_SSID_CACHE="$ssid"
-    CURRENT_SSID_CACHE_TIME=$current_time
-    
-    echo "$ssid"
-}
-
-# دالة لتهريب SSID بشكل آمن - إصلاح معالجة الأحرف الخاصة المحسّن
-safe_escape_ssid() {
-    local ssid="$1"
-    [[ -z "$ssid" ]] && return 1
-    
-    # تنظيف المسافات الزائدة أولاً
-    ssid=$(echo "$ssid" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed 's/[[:space:]]\+/ /g')
-    
-    # إزالة الأحرف الخطيرة فقط (control characters) مع المحافظة على الأحرف المفيدة
-    ssid=$(echo "$ssid" | tr -d '\000-\037\177')
-    
-    # تهريب الأحرف الخاصة بطريقة آمنة تماماً
-    ssid=$(printf '%s\n' "$ssid" | sed 's/\\/\\\\/g; s/"/\\"/g; s/`/\\`/g; s/\$/\\$/g')
-    
-    # التحقق من الصحة النهائية
-    if [[ ${#ssid} -gt 32 || ${#ssid} -eq 0 ]]; then
-        return 1
-    fi
-    
-    echo "$ssid"
-    return 0
-}
-
-# --------------------------
-# دوال النظام والتبعيات
-# --------------------------
-
-# التحقق من وجود الأدوات المطلوبة
-check_dependencies() {
-    local no_restart=${1:-""}
-    local missing_deps=()
-    local required_commands=(ip iw iwconfig wpa_cli ping curl bc openssl host)
-
-    for cmd in "${required_commands[@]}"; do
-        if ! command -v "$cmd" &>/dev/null; then
-            missing_deps+=("$cmd")
-        fi
-    done
-
-    if [[ ${#missing_deps[@]} -gt 0 ]]; then
-        log_message "WARN" "Missing dependencies: ${missing_deps[*]}" "تبعيات مفقودة: ${missing_deps[*]}"
-
-        if command -v apt-get &>/dev/null; then
-            log_message "INFO" "Installing missing dependencies" "تثبيت التبعيات المفقودة"
-            
-            if sudo apt-get update -y >/dev/null 2>&1; then
-                local install_success=true
-                
-                for pkg in "${missing_deps[@]}"; do
-                    case "$pkg" in
-                        "host") 
-                            if ! sudo apt-get install -y dnsutils >/dev/null 2>&1; then
-                                install_success=false
-                            fi
-                            ;;
-                        *) 
-                            if ! sudo apt-get install -y "$pkg" >/dev/null 2>&1; then
-                                install_success=false
-                            fi
-                            ;;
-                    esac
-                done
-                
-                if $install_success; then
-                    log_message "SUCCESS" "Dependencies installed successfully" "تم تثبيت التبعيات بنجاح"
-                    [[ "$no_restart" != "no_restart" ]] && exec "$0" "$@"
-                else
-                    log_message "ERROR" "Some dependencies failed to install" "فشل تثبيت بعض التبعيات"
-                fi
-            else
-                log_message "ERROR" "Failed to update package list" "فشل تحديث قائمة الحزم"
-            fi
-        else
-            log_message "ERROR" "Package manager not found. Please install missing dependencies manually" \
-                       "مدير الحزم غير موجود. يرجى تثبيت التبعيات المفقودة يدوياً"
-        fi
-    fi
-
-    return 0
-}
-
-# الدالة المكررة تم حذفها - الدالة الصحيحة في السطر 464
-
-# ========================================
-# LOG MANAGEMENT FUNCTIONS - إدارة السجلات
-# ========================================
-
-# تحميل السجلات المعلقة
-upload_pending_logs() {
-    [[ ! -f "$REMOTE_LOG_FILE" || ! -s "$REMOTE_LOG_FILE" ]] && return 0
-    
-    log_message "INFO" "Uploading pending logs" "تحميل السجلات المعلقة"
-    
-    local uploaded=0
-    local failed=0
-    
-    while IFS= read -r line && [[ $failed -lt 3 ]]; do
-        if timeout 5 curl -s --connect-timeout 3 --max-time 5 \
-            --data-urlencode "file=aasw.log" \
-            --data-urlencode "data=$line" \
-            "$log" &>/dev/null; then
-            ((uploaded++))
-        else
-            ((failed++))
-        fi
-    done < "$REMOTE_LOG_FILE"
-    
-    if [[ $failed -lt 3 ]]; then
-        > "$REMOTE_LOG_FILE"
-        log_message "SUCCESS" "Uploaded $uploaded pending log entries" "تم رفع $uploaded سجل معلق"
-    fi
-}
-
-# --------------------------
-# دوال اختبار الشبكة - مع إصلاح DNS المتقدم
-# --------------------------
-
-# **إصلاح DNS المتقدم** - يحل مشكلة DNS hijacking وCaptive portals
-fix_dns_issues() {
-    local fixed=false
-    local backup_file="/etc/resolv.conf.awacs_backup"
-    
-    log_message "INFO" "Checking DNS configuration" "فحص إعدادات DNS"
-    
-    # التحقق من صحة ملف resolv.conf
-    if [[ ! -r /etc/resolv.conf ]]; then
-        log_message "ERROR" "Cannot read /etc/resolv.conf" "لا يمكن قراءة ملف resolv.conf"
-        return 1
-    fi
-    
-    # تجربة DNS servers مختلفة - Adaptive Mode
-    local dns_ping_timeout dns_test_timeout
-    case "$SPEED_MODE" in
-        "fast") 
-            dns_ping_timeout=1
-            dns_test_timeout=2
-            ;;
-        "balanced") 
-            dns_ping_timeout=2
-            dns_test_timeout=3
-            ;;
-        "conservative") 
-            dns_ping_timeout=3
-            dns_test_timeout=5
-            ;;
-        *) 
-            dns_ping_timeout=2
-            dns_test_timeout=3
-            ;;
-    esac
-    
-    # إنشاء نسخة احتياطية آمنة
-    if [[ ! -f "$backup_file" ]]; then
-        if ! sudo cp /etc/resolv.conf "$backup_file" 2>/dev/null; then
-            log_message "ERROR" "Failed to create DNS backup" "فشل في إنشاء نسخة احتياطية DNS"
-            return 1
-        fi
-        sudo chmod 644 "$backup_file" 2>/dev/null
-    fi
-    
-    # دالة للتحقق من صحة DNS server
-    validate_dns_server() {
-        local dns_ip="$1"
-        
-        # التحقق من صيغة IP
-        if ! [[ "$dns_ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-            return 1
-        fi
-        
-        # التحقق من أن كل جزء من IP صالح (0-255)
-        local IFS='.'
-        local ip_parts=($dns_ip)
-        for part in "${ip_parts[@]}"; do
-            if ((part < 0 || part > 255)); then
-                return 1
-            fi
-        done
-        
-        # اختبار الاتصال
-        if ! timeout "$dns_ping_timeout" ping -c 1 -W "$dns_ping_timeout" "$dns_ip" &>/dev/null; then
-            return 1
-        fi
-        
-        # اختبار DNS query
-        if ! timeout "$dns_test_timeout" nslookup google.com "$dns_ip" &>/dev/null; then
-            return 1
-        fi
-        
-        return 0
-    }
-    
-    # تطبيق DNS server بطريقة آمنة
-    apply_dns_server() {
-        local dns_server="$1"
-        local temp_resolv="/tmp/resolv.conf.awacs.$$"
-        
-        # إنشاء ملف resolv.conf جديد
-        {
-            echo "# Generated by AWACS - $(date)"
-            echo "nameserver $dns_server"
-            # إضافة DNS servers الأصلية (إذا كانت مختلفة)
-            if [[ -f "$backup_file" ]]; then
-                grep "^nameserver" "$backup_file" | grep -v "$dns_server" | head -2
-            fi
-            echo "# Fallback options"
-            echo "options timeout:2 attempts:3"
-        } > "$temp_resolv"
-        
-        # التحقق من صحة الملف المؤقت
-        if [[ -s "$temp_resolv" ]] && grep -q "nameserver $dns_server" "$temp_resolv"; then
-            if sudo cp "$temp_resolv" /etc/resolv.conf 2>/dev/null; then
-                rm -f "$temp_resolv"
-                return 0
-            fi
-        fi
-        
-        rm -f "$temp_resolv"
-        return 1
-    }
-    
-    # اختبار DNS servers الأساسية
-    for dns_server in "${PRIMARY_DNS_SERVERS[@]}"; do
-        if validate_dns_server "$dns_server"; then
-            log_message "INFO" "Applying primary DNS server: $dns_server" "تطبيق خادم DNS أساسي: $dns_server"
-            if apply_dns_server "$dns_server"; then
-                fixed=true
-                break
-            fi
-        else
-            log_message "WARN" "Primary DNS server failed validation: $dns_server" "فشل التحقق من خادم DNS: $dns_server"
-        fi
-    done
-    
-    # إذا فشلت الأساسية، تجربة البديلة
-    if ! $fixed; then
-        log_message "WARN" "Primary DNS servers failed, trying fallback" "فشل خوادم DNS الأساسية، تجربة البديلة"
-        for dns_server in "${FALLBACK_DNS_SERVERS[@]}"; do
-            if validate_dns_server "$dns_server"; then
-                log_message "INFO" "Applying fallback DNS server: $dns_server" "تطبيق خادم DNS بديل: $dns_server"
-                if apply_dns_server "$dns_server"; then
-                    fixed=true
-                    break
-                fi
-            else
-                log_message "WARN" "Fallback DNS server failed validation: $dns_server" "فشل التحقق من خادم DNS البديل: $dns_server"
-            fi
-        done
-    fi
-    
-    if $fixed; then
-        # إعادة تشغيل خدمات DNS إذا كانت موجودة
-        if command -v systemctl &>/dev/null; then
-            if systemctl is-active systemd-resolved &>/dev/null; then
-                sudo systemctl restart systemd-resolved 2>/dev/null || true
-                sleep 1
-            fi
-            if systemctl is-active dnsmasq &>/dev/null; then
-                sudo systemctl restart dnsmasq 2>/dev/null || true
-                sleep 1
-            fi
-        fi
-        
-        # التحقق النهائي من عمل DNS
-        if timeout 5 nslookup google.com &>/dev/null; then
-            log_message "SUCCESS" "DNS configuration fixed and verified" "تم إصلاح والتحقق من إعدادات DNS"
-            return 0
-        else
-            log_message "WARN" "DNS applied but verification failed" "تم تطبيق DNS لكن فشل التحقق"
-            # استرداد النسخة الاحتياطية
-            sudo cp "$backup_file" /etc/resolv.conf 2>/dev/null || true
-        fi
-    fi
-    
-    log_message "ERROR" "Failed to fix DNS issues" "فشل في إصلاح مشاكل DNS"
-    return 1
-}
-
-# فحص الاتصال بالإنترنت - محسن مع اختبار متقدم ومقاوم للـ DNS hijacking
-check_internet() {
-    local test_methods=("ping" "curl" "wget" "nslookup")
-    local success_count=0
-    local total_tests=0
-    
-    # تحديد الإعدادات حسب وضع السرعة
-    local ping_timeout curl_timeout dns_timeout ping_ips test_urls
-    case "$SPEED_MODE" in
-        "fast")
-            ping_timeout=2
-            curl_timeout=3
-            dns_timeout=2
-            ping_ips=("8.8.8.8" "1.1.1.1")
-            test_urls=("http://detectportal.firefox.com/success.txt" "http://www.google.com/generate_204")
-            ;;
-        "balanced")
-            ping_timeout=3
-            curl_timeout=5
-            dns_timeout=3
-            ping_ips=("8.8.8.8" "1.1.1.1" "208.67.222.222")
-            test_urls=("http://detectportal.firefox.com/success.txt" "http://www.google.com/generate_204" "http://clients3.google.com/generate_204")
-            ;;
-        "conservative")
-            ping_timeout=5
-            curl_timeout=10
-            dns_timeout=5
-            ping_ips=("8.8.8.8" "1.1.1.1" "208.67.222.222")
-            test_urls=("http://detectportal.firefox.com/success.txt" "http://www.google.com/generate_204" "http://clients3.google.com/generate_204" "http://connectivitycheck.gstatic.com/generate_204" "http://captive.apple.com/hotspot-detect.html")
-            ;;
-        *)
-            ping_timeout=3
-            curl_timeout=5
-            dns_timeout=3
-            ping_ips=("8.8.8.8" "1.1.1.1" "208.67.222.222")
-            test_urls=("http://detectportal.firefox.com/success.txt" "http://www.google.com/generate_204" "http://clients3.google.com/generate_204")
-            ;;
-    esac
-    
-    # اختبار Ping - Adaptive Mode
-    for ip in "${ping_ips[@]}"; do
-        if timeout $ping_timeout ping -c 1 -W 1 "$ip" &>/dev/null; then
-            ((success_count++))
-        fi
-        ((total_tests++))
-    done
-    
-    # اختبار HTTP requests - Adaptive Mode
-    for url in "${test_urls[@]}"; do
-        if timeout $curl_timeout curl -sf --max-time $((curl_timeout-1)) "$url" &>/dev/null; then
-            ((success_count++))
-        elif [[ "$SPEED_MODE" == "conservative" ]] && timeout $curl_timeout wget -q --spider --timeout=$((curl_timeout-1)) "$url" &>/dev/null; then
-            ((success_count++))
-        fi
-        ((total_tests++))
-    done
-    
-    # اختبار DNS resolution - Adaptive Mode
-    if timeout $dns_timeout nslookup google.com &>/dev/null; then
-        ((success_count++))
-    fi
-    ((total_tests++))
-    
-    # نحتاج نجاح 60% على الأقل من الاختبارات
-    local success_rate=$((success_count * 100 / total_tests))
-    
-    if [[ $success_rate -ge 60 ]]; then
-        INTERNET_CONNECTED=true
-        return 0
-    else
-        INTERNET_CONNECTED=false
-        
-        # محاولة إصلاح DNS إذا كان هناك اتصال جزئي
-        if [[ $success_count -gt 0 ]]; then
-            log_message "WARN" "Partial connectivity detected, attempting DNS fix" \
-                       "تم اكتشاف اتصال جزئي، محاولة إصلاح DNS"
-            fix_dns_issues
-            
-            # إعادة الاختبار
-            sleep 3
-            if timeout 10 curl -sf --max-time 8 "http://detectportal.firefox.com/success.txt" &>/dev/null; then
-                INTERNET_CONNECTED=true
-                return 0
-            fi
-        fi
-        
-        return 1
-    fi
-}
-
-# قياس السرعة باستخدام wget - مطلوب كـ backup method
-measure_speed_wget() {
-    for server in "${SPEEDTEST_SERVERS[@]}"; do
-        local start_time end_time time_diff
-        start_time=$(date +%s.%N)
-        
-        if timeout 10 wget -q -O /dev/null "$server" 2>/dev/null; then
-            end_time=$(date +%s.%N)
-            time_diff=$(bc_calc "$end_time - $start_time")
-            
-            if compare_float "$time_diff" ">" "0"; then
-                local file_size=500000
-                [[ "$server" == *"test100k"* ]] && file_size=100000
-                
-                local speed=$(bc_calc "scale=2; $file_size / $time_diff / 125000")
-                echo "$speed"
-                return 0
-            fi
-        fi
-    done
-    echo "0.00"
-}
-
-# قياس السرعة محسن
-measure_speed() {
-    log_message "DEBUG" "Measuring connection speed" "قياس سرعة الاتصال"
-
-    [[ "$TEST_MODE" == "yes" ]] && { echo "5.00"; return 0; }
-
-    local best_speed="0.00"
-    local measurement_count=0
-    
-    # تحديد عدد القياسات حسب وضع السرعة
-    local max_measurements connect_timeout max_time
-    case "$SPEED_MODE" in
-        "fast") 
-            max_measurements=1
-            connect_timeout=3
-            max_time=5
-            ;;
-        "balanced") 
-            max_measurements=2
-            connect_timeout=4
-            max_time=8
-            ;;
-        "conservative") 
-            max_measurements=3
-            connect_timeout=6
-            max_time=12
-            ;;
-        *) 
-            max_measurements=2
-            connect_timeout=4
-            max_time=8
-            ;;
-    esac
-    
-    case "$SPEED_TEST_METHOD" in
-        "curl"|"auto"|*)
-            for server in "${SPEEDTEST_SERVERS[@]}"; do
-                [[ $measurement_count -ge $max_measurements ]] && break
-                
-                local speed_bytes
-                speed_bytes=$(curl -s -w "%{speed_download}" -o /dev/null \
-                    --connect-timeout $connect_timeout --max-time $max_time "$server" 2>/dev/null)
-                
-                if [[ -n "$speed_bytes" && "$speed_bytes" != "0" && "$speed_bytes" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-                    local speed_mbps
-                    speed_mbps=$(bc_calc "scale=2; $speed_bytes / 125000")
-                    
-                    if compare_float "$speed_mbps" ">" "$best_speed"; then
-                        best_speed="$speed_mbps"
-                    fi
-                    
-                    ((measurement_count++))
-                    compare_float "$speed_mbps" ">" "3.0" && break
-                fi
-            done
-            ;;
-        "wget")
-            best_speed=$(measure_speed_wget)
-            ;;
-    esac
-
-    # إذا فشل curl، استخدم wget كـ backup
-    if compare_float "$best_speed" "==" "0.00"; then
-        best_speed=$(measure_speed_wget)
-    fi
-
-    if compare_float "$best_speed" ">" "0"; then
-        local current_ssid
-        current_ssid=$(get_current_ssid)
-        if [[ -n "$current_ssid" ]]; then
-            LAST_SUCCESSFUL_SSID="$current_ssid"
-            save_last_successful_ssid "$current_ssid"
-        fi
-        echo "$best_speed"
-    else
-        echo "0.10"
-    fi
-}
-
-# --------------------------
-# دوال التعافي وإدارة الأخطاء - مطلوبة جداً
-# --------------------------
-
-# التعافي من سقوط الاتصال
-recover_from_failure() {
-    log_message "ERROR" "Recovering from connection failure" "التعافي من فشل الاتصال"
-
-    sudo wpa_cli -i "$WIFI_INTERFACE" disable_network all >/dev/null 2>&1
-    sudo ip link set "$WIFI_INTERFACE" down
-    sleep 3
-    sudo rfkill unblock wifi 2>/dev/null || true
-    sleep 2
-    sudo ip link set "$WIFI_INTERFACE" up
-    sleep 5
-
-    if systemctl is-active --quiet wpa_supplicant; then
-        sudo systemctl restart wpa_supplicant >/dev/null 2>&1
-        sleep 3
-    fi
-    
-    sudo ifconfig "$WIFI_INTERFACE" up 2>/dev/null || true
-    sudo wpa_cli -i "$WIFI_INTERFACE" reassociate >/dev/null 2>&1
-    sleep 2
-}
-
-# الإعادة النووية للشبكة - مطلوبة جداً
-nuclear_reset() {
-    log_message "ERROR" "Initiating nuclear reset" "بدء الإعادة النووية للشبكة"
-    local reset_success=false
-
-    # المستوى 1: إعادة تشغيل أساسية - Adaptive Mode
-    log_message "INFO" "Level 1 reset: Basic interface restart" "المستوى 1: إعادة تشغيل الواجهة"
-    sudo ip link set "$WIFI_INTERFACE" down
-    case "$SPEED_MODE" in
-        "fast") sleep 1 ;;
-        "balanced") sleep 2 ;;
-        "conservative") sleep 3 ;;
-        *) sleep 2 ;;
-    esac
-    sudo ip link set "$WIFI_INTERFACE" up
-    case "$SPEED_MODE" in
-        "fast") sleep 1 ;;
-        "balanced") sleep 2 ;;
-        "conservative") sleep 3 ;;
-        *) sleep 2 ;;
-    esac
-    
-    if iwconfig "$WIFI_INTERFACE" 2>/dev/null | grep -q "IEEE 802.11"; then
-        log_message "INFO" "Level 1 reset successful" "نجحت إعادة التعيين من المستوى 1"
-        reset_success=true
-    else
-        # المستوى 2: إعادة تشغيل الخدمات
-        log_message "INFO" "Level 2 reset: Restarting network services" "المستوى 2: إعادة تشغيل خدمات الشبكة"
-        
-        sudo wpa_cli -i "$WIFI_INTERFACE" disable_network all >/dev/null 2>&1
-        
-        if systemctl is-active --quiet wpa_supplicant; then
-            sudo systemctl restart wpa_supplicant >/dev/null 2>&1
-            case "$SPEED_MODE" in
-                "fast") sleep 1 ;;
-                "balanced") sleep 2 ;;
-                "conservative") sleep 3 ;;
-                *) sleep 2 ;;
-            esac
-        fi
-        
-        sudo ifconfig "$WIFI_INTERFACE" up 2>/dev/null || true
-        case "$SPEED_MODE" in
-            "fast") sleep 1 ;;
-            "balanced") sleep 2 ;;
-            "conservative") sleep 3 ;;
-            *) sleep 2 ;;
-        esac
-        
-        if iwconfig "$WIFI_INTERFACE" 2>/dev/null | grep -q "IEEE 802.11"; then
-            log_message "INFO" "Level 2 reset successful" "نجحت إعادة التعيين من المستوى 2"
-            reset_success=true
-        else
-            # المستوى 3: إعادة تعيين كاملة
-            log_message "WARN" "Level 3 reset: Full network stack reset" "المستوى 3: إعادة تعيين كاملة"
-            
-            for service in wpa_supplicant NetworkManager dhcpcd; do
-                if systemctl is-active --quiet "$service" 2>/dev/null; then
-                    sudo systemctl stop "$service" 2>/dev/null || true
-                    sleep 1
-                fi
-            done
-            
-            sudo rm -f /var/run/wpa_supplicant/* 2>/dev/null || true
-            
-            sudo ip link set "$WIFI_INTERFACE" down
-            case "$SPEED_MODE" in
-                "fast") sleep 1 ;;
-                "balanced") sleep 2 ;;
-                "conservative") sleep 3 ;;
-                *) sleep 2 ;;
-            esac
-            sudo rfkill unblock wifi
-            case "$SPEED_MODE" in
-                "fast") sleep 1 ;;
-                "balanced") sleep 1 ;;
-                "conservative") sleep 2 ;;
-                *) sleep 1 ;;
-            esac
-            sudo ip link set "$WIFI_INTERFACE" up
-            case "$SPEED_MODE" in
-                "fast") sleep 1 ;;
-                "balanced") sleep 2 ;;
-                "conservative") sleep 3 ;;
-                *) sleep 2 ;;
-            esac
-            
-            sudo ip addr flush dev "$WIFI_INTERFACE"
-            case "$SPEED_MODE" in
-                "fast") sleep 1 ;;
-                "balanced") sleep 1 ;;
-                "conservative") sleep 2 ;;
-                *) sleep 1 ;;
-            esac
-            
-            # إعادة تشغيل الخدمات - بالتوازي في Fast Mode
-            if [[ "$SPEED_MODE" == "fast" ]]; then
-                sudo systemctl restart wpa_supplicant 2>/dev/null &
-                sudo systemctl restart dhcpcd 2>/dev/null &
-                wait
-                sleep 2
-            else
-                for service in dhcpcd NetworkManager wpa_supplicant; do
-                    if systemctl is-enabled --quiet "$service" 2>/dev/null; then
-                        sudo systemctl restart "$service" 2>/dev/null || true
-                        case "$SPEED_MODE" in
-                            "balanced") sleep 1 ;;
-                            "conservative") sleep 2 ;;
-                            *) sleep 1 ;;
-                        esac
-                    fi
-                done
-                
-                case "$SPEED_MODE" in
-                    "balanced") sleep 3 ;;
-                    "conservative") sleep 5 ;;
-                    *) sleep 3 ;;
-                esac
-            fi
-            sudo wpa_cli -i "$WIFI_INTERFACE" enable_network all >/dev/null 2>&1
-            sudo wpa_cli -i "$WIFI_INTERFACE" reassociate >/dev/null 2>&1
-            
-            if iwconfig "$WIFI_INTERFACE" 2>/dev/null | grep -q "IEEE 802.11"; then
-                log_message "INFO" "Level 3 reset successful" "نجحت إعادة التعيين من المستوى 3"
-                reset_success=true
-            fi
-        fi
-    fi
-
-    local current_ssid
-    current_ssid=$(get_current_ssid)
-    
-    if [[ -n "$current_ssid" ]] && check_internet; then
-        LAST_SUCCESSFUL_SSID="$current_ssid"
-        save_last_successful_ssid "$current_ssid"
-        log_message "SUCCESS" "Connected to $current_ssid after reset" "تم الاتصال بـ $current_ssid بعد إعادة التعيين"
-        # Adaptive sleep حسب وضع السرعة
-        local success_sleep
-        case "$SPEED_MODE" in
-            "fast") success_sleep=2 ;;
-            "balanced") success_sleep=3 ;;
-            "conservative") success_sleep=5 ;;
-            *) success_sleep=3 ;;
-        esac
-        sleep $success_sleep
-        return 0
-    fi
-    
-    # الملاذ الأخير: إعادة تشغيل النظام
-    log_message "ERROR" "Nuclear reset failed, rebooting system as last resort" \
-               "فشلت الإعادة النووية، إعادة تشغيل النظام كملاذ أخير"
-    sync
-    sudo reboot
-    return 1
-}
-
-# فحص حالة أجهزة الواي فاي
-check_wifi_hardware() {
-    [[ "$HARDWARE_CHECK" != "yes" ]] && return 0
-
-    local retry_count=0
-    local max_retries=3
-    local hardware_recovery_failed=false
-    
-    log_message "DEBUG" "Starting WiFi hardware check" "بدء فحص أجهزة الواي فاي"
-    
-    while ((retry_count < max_retries)); do
-        local hardware_ok=true
-        
-        # فحص حالة rfkill
-        if rfkill list wifi | grep -q "blocked: yes"; then
-            log_message "WARN" "WiFi blocked by rfkill, attempting unblock (attempt $((retry_count + 1)))" "الواي فاي محظور، محاولة إلغاء الحظر"
-            if ! sudo rfkill unblock wifi 2>/dev/null; then
-                log_message "ERROR" "Failed to unblock WiFi with rfkill" "فشل في إلغاء حظر الواي فاي"
-                hardware_ok=false
-            else
-                sleep 2
-            fi
-        fi
-        
-        # فحص حالة واجهة الشبكة
-        if ! ip link show "$WIFI_INTERFACE" 2>/dev/null | grep -q "UP"; then
-            log_message "WARN" "WiFi interface down, bringing up (attempt $((retry_count + 1)))" "واجهة الواي فاي معطلة، تفعيل"
-            if ! sudo ip link set "$WIFI_INTERFACE" up 2>/dev/null; then
-                log_message "ERROR" "Failed to bring up WiFi interface" "فشل في تفعيل واجهة الواي فاي"
-                hardware_ok=false
-            else
-                sleep 2
-            fi
-        fi
-        
-        # فحص IEEE 802.11 capability
-        if ! iwconfig "$WIFI_INTERFACE" 2>/dev/null | grep -q "IEEE 802.11"; then
-            log_message "WARN" "WiFi interface not showing 802.11 capability (attempt $((retry_count + 1)))" "واجهة الواي فاي لا تظهر قدرة 802.11"
-            hardware_ok=false
-            
-            # محاولة إصلاح عميق للأجهزة
-            if ((retry_count < max_retries - 1)); then
-                log_message "INFO" "Attempting hardware recovery" "محاولة استرداد الأجهزة"
-                
-                # إعادة تحميل driver إذا أمكن
-                local wifi_driver=$(lspci -k | grep -A 3 "Network controller\|Wireless" | grep "Kernel driver in use" | awk '{print $5}' | head -1)
-                if [[ -n "$wifi_driver" ]]; then
-                    log_message "INFO" "Reloading WiFi driver: $wifi_driver" "إعادة تحميل تعريف الواي فاي: $wifi_driver"
-                    
-                    # إيقاف الواجهة أولاً
-                    sudo ip link set "$WIFI_INTERFACE" down 2>/dev/null || true
-                    sleep 1
-                    
-                    # إعادة تحميل التعريف
-                    if sudo modprobe -r "$wifi_driver" 2>/dev/null; then
-                        sleep 2
-                        if sudo modprobe "$wifi_driver" 2>/dev/null; then
-                            sleep 3
-                            log_message "INFO" "WiFi driver reloaded successfully" "تم إعادة تحميل التعريف بنجاح"
-                        else
-                            log_message "ERROR" "Failed to reload WiFi driver" "فشل في إعادة تحميل التعريف"
-                        fi
-                    fi
-                    
-                    # إعادة تفعيل الواجهة
-                    sudo ip link set "$WIFI_INTERFACE" up 2>/dev/null || true
-                    sleep 2
-                fi
-                
-                # محاولة إعادة تشغيل خدمة networking
-                if command -v systemctl &>/dev/null; then
-                    if systemctl is-active networking &>/dev/null; then
-                        log_message "INFO" "Restarting networking service" "إعادة تشغيل خدمة الشبكة"
-                        sudo systemctl restart networking 2>/dev/null || true
-                        sleep 3
-                    fi
-                fi
-            fi
-        fi
-        
-        # إذا نجح كل شيء، خروج من الحلقة
-        if $hardware_ok; then
-            # اختبار نهائي - محاولة scan بسيط
-            if timeout 5 iwlist "$WIFI_INTERFACE" scan &>/dev/null || timeout 5 iw dev "$WIFI_INTERFACE" scan &>/dev/null; then
-                log_message "SUCCESS" "WiFi hardware check passed" "نجح فحص أجهزة الواي فاي"
-                return 0
-            else
-                log_message "WARN" "WiFi hardware responding but scan failed" "الأجهزة تستجيب لكن فشل الفحص"
-                hardware_ok=false
-            fi
-        fi
-        
-        ((retry_count++))
-        
-        if ((retry_count < max_retries)); then
-            log_message "INFO" "Hardware check retry $retry_count/$max_retries in 5 seconds" "إعادة محاولة فحص الأجهزة $retry_count/$max_retries"
-            sleep 5
-        fi
-    done
-    
-    # فشل كل المحاولات
-    log_message "ERROR" "WiFi hardware check failed after $max_retries attempts" "فشل فحص أجهزة الواي فاي بعد $max_retries محاولات"
-    
-    # محاولة أخيرة - استخدام واجهة بديلة إذا كانت متوفرة
-    local backup_interfaces=($(iwconfig 2>/dev/null | grep "IEEE 802.11" | awk '{print $1}' | grep -v "$WIFI_INTERFACE"))
-    if [[ ${#backup_interfaces[@]} -gt 0 ]]; then
-        local backup_interface="${backup_interfaces[0]}"
-        log_message "WARN" "Trying backup WiFi interface: $backup_interface" "تجربة واجهة واي فاي بديلة: $backup_interface"
-        WIFI_INTERFACE="$backup_interface"
-        
-        # إعادة اختبار مع الواجهة البديلة
-        if iwconfig "$WIFI_INTERFACE" 2>/dev/null | grep -q "IEEE 802.11"; then
-            log_message "SUCCESS" "Switched to backup WiFi interface: $backup_interface" "تم التبديل لواجهة واي فاي بديلة: $backup_interface"
-            return 0
-        fi
-    fi
-    
-    return 1
-}
-
-# فحص حالة wpa_supplicant
-check_wpa_supplicant_status() {
-    log_message "DEBUG" "Checking wpa_supplicant status" "التحقق من حالة wpa_supplicant"
-    
-    if ! pgrep -x wpa_supplicant >/dev/null; then
-        log_message "ERROR" "wpa_supplicant process not running" "عملية wpa_supplicant غير مشغلة"
-        
-        if systemctl is-enabled --quiet wpa_supplicant 2>/dev/null; then
-            log_message "INFO" "Restarting wpa_supplicant service" "إعادة تشغيل خدمة wpa_supplicant"
-            sudo systemctl restart wpa_supplicant >/dev/null 2>&1
-            sleep 3
-        else
-            log_message "INFO" "Starting wpa_supplicant manually" "بدء wpa_supplicant يدوياً"
-            sudo wpa_supplicant -B -i "$WIFI_INTERFACE" -c "$WPACONF" >/dev/null 2>&1
-            sleep 3
-        fi
-        
-        if pgrep -x wpa_supplicant >/dev/null; then
-            log_message "SUCCESS" "wpa_supplicant restarted successfully" "تمت إعادة تشغيل wpa_supplicant بنجاح"
-            return 0
-        else
-            log_message "ERROR" "Failed to restart wpa_supplicant" "فشل إعادة تشغيل wpa_supplicant"
-            return 1
-        fi
-    fi
-    
-    if ! sudo wpa_cli -i "$WIFI_INTERFACE" ping >/dev/null 2>&1; then
-        log_message "ERROR" "Cannot communicate with wpa_supplicant" "لا يمكن الاتصال بـ wpa_supplicant"
-        return 1
-    fi
-    
-    return 0
-}
-
-# --------------------------
-# دوال تحليل وتقييم الشبكات - مطلوبة لاختيار أفضل شبكة
-# --------------------------
-
-# حساب نقاط الشبكة - مطلوب
-calculate_network_score() {
-    local speed=$1
-    local signal=$2
-    local priority=${3:-5}
-    local current=${4:-0}
-
-    if ! [[ "$signal" =~ ^-?[0-9]+$ ]]; then
-        echo "0"
-        return 1
-    fi
-
-    local signal_strength=$((${signal#-}))
-
-    if ((signal_strength > 85)); then
-        echo "0"
-        return 2
-    fi
-
-    local signal_score=$(((100 - signal_strength) > 0 ? (100 - signal_strength) : 0))
-
-    local speed_score=0
-    if compare_float "$speed" ">" "10"; then
-        speed_score=100
-    else
-        speed_score=$(bc_calc "$speed * 10")
-    fi
-
-    local current_bonus=0
-    [[ "$current" == "1" ]] && current_bonus=25
-
-    local total_score
-    total_score=$(bc_calc "scale=2; ($speed_score * ${SCORE_WEIGHTS["speed"]}/100) + ($signal_score * ${SCORE_WEIGHTS["signal"]}/100) + ($priority * ${SCORE_WEIGHTS["priority"]}/100) + $current_bonus")
-
-    echo "$total_score"
-}
-
-# تحليل الشبكات المتاحة - مطلوب
-analyze_available_networks() {
-    local scan_results="$1"
-    local current_ssid
-    current_ssid=$(get_current_ssid)
-    local current_has_internet
-    current_has_internet=$(check_internet && echo "1" || echo "0")
-    local networks_info=""
-
-    [[ -z "$scan_results" ]] && return
-
-    while IFS=$'\t' read -r bssid ssid signal; do
-        [[ -z "$bssid" || -z "$ssid" ]] && continue
-        
-        if ! is_valid_ssid "$ssid"; then
-            continue
-        fi
-
-        local signal_val
-        signal_val=$(echo "$signal" | grep -oE '[-+]?[0-9]+' | head -1)
-        [[ ! "$signal_val" =~ ^-?[0-9]+$ ]] && continue
-
-        local priority=0
-        local is_current=0
-
-        if [[ "$ssid" == "$current_ssid" ]]; then
-            if [[ "$current_has_internet" == "1" ]]; then
-                priority=120
-            else
-                priority=90
-            fi
-            is_current=1
-        elif [[ -n "${SAFETY_NET[$ssid]}" ]]; then
-            priority=100
-        elif sudo wpa_cli -i "$WIFI_INTERFACE" list_networks 2>/dev/null | sed 's/"//g' | awk '{print $2}' | grep -qFx "$ssid"; then
-            priority=80
-        elif [[ -f "$TEMP_WIFI_FILE" ]] && grep -Fq "$ssid" "$TEMP_WIFI_FILE"; then
-            priority=40
-        else
-            priority=10
-        fi
-
-        local est_speed
-        est_speed=$(bc_calc "scale=2; (120 + $signal_val) * 0.2")
-
-        if compare_float "$est_speed" "<" "0.1"; then
-            est_speed="0.10"
-        elif compare_float "$est_speed" ">" "25"; then
-            est_speed="25.00"
-        fi
-
-        local score
-        score=$(calculate_network_score "$est_speed" "$signal_val" "$priority" "$is_current")
-
-        networks_info="${networks_info}${ssid}|${signal_val}|${est_speed}|${score}|${is_current}|${priority}\n"
-    done <<< "$scan_results"
-
-    echo -e "$networks_info" | sort -t "|" -k4,4rn
-}
-
-# البحث عن أفضل شبكة - مطلوب
-find_best_network() {
-    local current_ssid
-    current_ssid=$(get_current_ssid)
-    local current_has_internet
-    current_has_internet=$(check_internet && echo "1" || echo "0")
-    local scan_results
-    scan_results=$(scan_networks)
-    local networks_info
-    networks_info=$(analyze_available_networks "$scan_results")
-
-    [[ -z "$networks_info" ]] && return
-
-    local best_network=""
-    local best_score=0
-    local current_network=""
-    local current_score=0
-
-    while IFS="|" read -r ssid signal speed score is_current priority; do
-        [[ -z "$ssid" ]] && continue
-
-        if [[ "$is_current" == "1" ]]; then
-            current_network="$ssid"
-            current_score="$score"
-        fi
-
-        if [[ -z "$best_network" ]] || compare_float "$score" ">" "$best_score"; then
-            best_network="$ssid"
-            best_score="$score"
-        fi
-    done <<< "$networks_info"
-
-    if [[ "$current_network" == "$best_network" ]]; then
-        return
-    fi
-
-    if [[ -n "$current_network" ]]; then
-        local improvement_ratio
-        improvement_ratio=$(bc_calc "scale=2; $best_score / ($current_score + 0.01)")
-
-        if [[ "$current_has_internet" == "1" ]]; then
-            if ! compare_float "$improvement_ratio" ">" "$SPEED_THRESHOLD"; then
-                return
-            fi
-
-            if compare_float "$current_score" ">" "80" && ! compare_float "$improvement_ratio" ">" "$NEVER_BREAK_THRESHOLD"; then
-                return
-            fi
-        else
-            if ! compare_float "$improvement_ratio" ">" "1.1"; then
-                return
-            fi
-        fi
-    fi
-
-    echo "$best_network"
-}
-
-# --------------------------
-# الخوارزمية التكيفية - مطلوبة
-# --------------------------
-
-# ضبط فترة المسح ديناميكياً
-adjust_scan_interval() {
-    local connection_stable=$1
-    
-    if [[ "$connection_stable" == "1" ]]; then
-        ((CONSECUTIVE_STABLE_CONNECTIONS++))
-        
-        if ((CONSECUTIVE_STABLE_CONNECTIONS > 5)); then
-            ADAPTIVE_SCAN_INTERVAL=$((ADAPTIVE_SCAN_INTERVAL + 15))
-            if ((ADAPTIVE_SCAN_INTERVAL > MAX_SCAN_INTERVAL)); then
-                ADAPTIVE_SCAN_INTERVAL=$MAX_SCAN_INTERVAL
-            fi
-        fi
-    else
-        CONSECUTIVE_STABLE_CONNECTIONS=0
-        ADAPTIVE_SCAN_INTERVAL=$MIN_SCAN_INTERVAL
-    fi
-    
-    SCAN_INTERVAL=$ADAPTIVE_SCAN_INTERVAL
-}
-
-# --------------------------
-# إدارة الشبكات
-# --------------------------
-
-# مسح الشبكات
-scan_networks() {
-    local current_time=$(date +%s)
-
-    [[ "$TEST_MODE" == "yes" && -f "$LAST_SCAN_FILE" ]] && { cat "$LAST_SCAN_FILE"; return 0; }
-
-    if ((current_time - LAST_SCAN_TIME < ADAPTIVE_SCAN_INTERVAL)) && [[ -f "$LAST_SCAN_FILE" && -s "$LAST_SCAN_FILE" ]]; then
-        cat "$LAST_SCAN_FILE"
-        return 0
-    fi
-
-    log_message "DEBUG" "Performing network scan" "جاري مسح الشبكات"
-
-    sleep $PRE_SCAN_SLEEP
-    sudo iw dev "$WIFI_INTERFACE" set power_save off >/dev/null 2>&1
-
-    local scan_output=""
-    local retry_count=0
-    # Adaptive retries حسب وضع السرعة
-    local max_retries
-    case "$SPEED_MODE" in
-        "fast") max_retries=3 ;;
-        "balanced") max_retries=4 ;;
-        "conservative") max_retries=$([ "$SYSTEM_BOOTING" = "true" ] && echo 8 || echo 5) ;;
-        *) max_retries=4 ;;
-    esac
-
-    while [[ $retry_count -lt $max_retries ]]; do
-        local temp_scan="$SCAN_OUTPUT_TMP.$$"
-        
-        if timeout 15 sudo iw dev "$WIFI_INTERFACE" scan 2>/dev/null > "$temp_scan"; then
-            scan_output=$(cat "$temp_scan" 2>/dev/null)
-        fi
-        
-        if [[ -z "$scan_output" ]]; then
-            if timeout 15 sudo iwlist "$WIFI_INTERFACE" scan 2>/dev/null > "$temp_scan"; then
-                scan_output=$(cat "$temp_scan" 2>/dev/null)
-            fi
-        fi
-        
-        rm -f "$temp_scan" 2>/dev/null
-
-        if [[ -n "$scan_output" && "$scan_output" != *"Device or resource busy"* ]]; then
-            break
-        fi
-
-        # Adaptive sleep حسب وضع السرعة
-        local sleep_time
-        case "$SPEED_MODE" in
-            "fast") sleep_time=1 ;;
-            "balanced") sleep_time=$((retry_count + 1)) ;;
-            "conservative") sleep_time=$((retry_count + 2)) ;;
-            *) sleep_time=$((retry_count + 1)) ;;
-        esac
-        sleep $sleep_time
-        ((retry_count++))
-    done
-
-    if [[ -z "$scan_output" || "$scan_output" == *"Device or resource busy"* ]]; then
-        [[ -f "$LAST_SCAN_FILE" && -s "$LAST_SCAN_FILE" ]] && cat "$LAST_SCAN_FILE"
-        return 1
-    fi
-
-    # تحليل النتائج
-    local result=""
-    if [[ "$scan_output" == *"BSS "* ]]; then
-        result=$(echo "$scan_output" | awk '
-            BEGIN { RS="BSS "; FS="\n" }
-            NR > 1 {
-                mac = $1; ssid = ""; signal = ""
-                for (i=1; i<=NF; i++) {
-                    if ($i ~ /SSID:/) {
-                        split($i, a, "SSID: ")
-                        if (length(a[2]) > 0 && a[2] != "\\x00") ssid = a[2]
-                    }
-                    if ($i ~ /signal:/) {
-                        split($i, a, "signal: ")
-                        signal = a[2]
-                    }
-                }
-                if (mac && ssid && signal && length(ssid) <= 32 && ssid !~ /^[\[\](){}]/) {
-                    gsub(/[\(\)\r\n\t]/, "", mac)
-                    gsub(/[\r\n\t]/, "", ssid)
-                    print mac "\t" ssid "\t" signal
-                }
-            }
-        ')
-    else
-        result=$(echo "$scan_output" | awk '
-            /Cell [0-9]+ - Address:/ {
-                if (mac && ssid && signal && length(ssid) <= 32 && ssid !~ /^[\[\](){}]/) {
-                    print mac "\t" ssid "\t" signal
-                }
-                mac = $5; ssid = ""; signal = ""
-            }
-            /ESSID:/ {
-                sub(/.*ESSID:"/, ""); sub(/".*/, "")
-                if (length($0) > 0) ssid = $0
-            }
-            /Quality=|Signal level=/ {
-                if ($0 ~ /Signal level=-[0-9]+/) {
-                    match($0, /-[0-9]+/)
-                    signal = substr($0, RSTART, RLENGTH)
-                } else if ($0 ~ /Signal level=[0-9]+\/[0-9]+/) {
-                    signal = "-70"
-                }
-            }
-            END {
-                if (mac && ssid && signal && length(ssid) <= 32 && ssid !~ /^[\[\](){}]/) {
-                    print mac "\t" ssid "\t" signal
-                }
-            }
-        ')
-    fi
-
-    if [[ -n "$result" ]]; then
-        echo "$result" > "$LAST_SCAN_FILE"
-        LAST_SCAN_TIME=$current_time
-        echo "$result"
-        return 0
-    else
-        [[ -f "$LAST_SCAN_FILE" && -s "$LAST_SCAN_FILE" ]] && cat "$LAST_SCAN_FILE"
-        return 1
-    fi
-}
-
-# التحقق من صحة SSID
-is_valid_ssid() {
-    local ssid="$1"
-    
-    [[ -z "$ssid" ]] && return 1
-    [[ "$ssid" =~ ^\[ ]] && return 1
-    [[ ${#ssid} -gt 32 ]] && return 1
-    [[ "$ssid" == *"INFO"* || "$ssid" == *"DEBUG"* || "$ssid" == *"ERROR"* ]] && return 1
-    [[ "$ssid" =~ ^[[:space:]]*$ ]] && return 1
-    
-    return 0
-}
-
-# الاتصال بشبكة محددة
-connect_to_network() {
-    local ssid="$1"
-    local keep_connection="${2:-0}"
-    
-    if ! is_valid_ssid "$ssid"; then
-        log_message "WARN" "Invalid SSID format: $ssid" "صيغة SSID غير صالحة: $ssid"
-        return 1
-    fi
-
-    log_message "INFO" "Attempting to connect to $ssid" "محاولة الاتصال بشبكة $ssid"
-
-    local network_id=""
-    local networks_list
-    networks_list=$(sudo wpa_cli -i "$WIFI_INTERFACE" list_networks 2>/dev/null)
-    
-    if [[ $? -eq 0 && -n "$networks_list" ]]; then
-        while IFS=$'\t' read -r id network_name flags; do
-            [[ "$id" == "network id" ]] && continue
-            
-            local clean_name="${network_name//\"/}"
-            if [[ "$clean_name" == "$ssid" ]]; then
-                network_id="$id"
-                break
-            fi
-        done <<< "$networks_list"
-    fi
-
-    if [[ -z "$network_id" || "$network_id" == "network" ]]; then
-        network_id=$(sudo wpa_cli -i "$WIFI_INTERFACE" add_network 2>/dev/null)
-        
-        if [[ -z "$network_id" || "$network_id" == "FAIL" ]]; then
-            log_message "ERROR" "Failed to add network $ssid" "فشل إضافة شبكة $ssid"
-            return 1
-        fi
-
-        local escaped_ssid
-        if ! escaped_ssid=$(safe_escape_ssid "$ssid"); then
-            log_message "ERROR" "Failed to escape SSID: $ssid" "فشل تهريب SSID: $ssid"
-            sudo wpa_cli -i "$WIFI_INTERFACE" remove_network "$network_id" >/dev/null 2>&1
-            return 1
-        fi
-        
-        if ! sudo wpa_cli -i "$WIFI_INTERFACE" set_network "$network_id" ssid "\"$escaped_ssid\"" >/dev/null 2>&1; then
-            log_message "ERROR" "Failed to set SSID for network $ssid" "فشل تعيين SSID للشبكة $ssid"
-            sudo wpa_cli -i "$WIFI_INTERFACE" remove_network "$network_id" >/dev/null 2>&1
-            return 1
-        fi
-        
-        sudo wpa_cli -i "$WIFI_INTERFACE" set_network "$network_id" key_mgmt NONE >/dev/null 2>&1
-        sudo wpa_cli -i "$WIFI_INTERFACE" set_network "$network_id" priority 5 >/dev/null 2>&1
-
-        echo "$ssid" >> "$TEMP_WIFI_FILE"
-        
-        if [[ $(wc -l < "$TEMP_WIFI_FILE" 2>/dev/null || echo 0) -gt $MAX_TEMP_NETWORKS ]]; then
-            tail -n $MAX_TEMP_NETWORKS "$TEMP_WIFI_FILE" > "$TEMP_WIFI_FILE.tmp" 2>/dev/null
-            mv "$TEMP_WIFI_FILE.tmp" "$TEMP_WIFI_FILE" 2>/dev/null
-        fi
-    fi
-
-    if [[ "$keep_connection" != "1" ]]; then
-        sudo wpa_cli -i "$WIFI_INTERFACE" disable_network all >/dev/null 2>&1
-    fi
-
-    if ! sudo wpa_cli -i "$WIFI_INTERFACE" enable_network "$network_id" >/dev/null 2>&1; then
-        log_message "ERROR" "Failed to enable network $ssid" "فشل تفعيل شبكة $ssid"
-        return 1
-    fi
-    
-    if ! sudo wpa_cli -i "$WIFI_INTERFACE" select_network "$network_id" >/dev/null 2>&1; then
-        log_message "ERROR" "Failed to select network $ssid" "فشل اختيار شبكة $ssid"
-        return 1
-    fi
-
-    sleep $SWITCH_TIMEOUT
-
-    # تحديد عدد المحاولات حسب وضع السرعة
-    local max_connect_retries
-    case "$SPEED_MODE" in
-        "fast") max_connect_retries=2 ;;
-        "balanced") max_connect_retries=3 ;;
-        "conservative") max_connect_retries=4 ;;
-        *) max_connect_retries=3 ;;
-    esac
-    
-    for retry in $(seq 1 $max_connect_retries); do
-        local connected_ssid
-        connected_ssid=$(get_current_ssid)
-
-        if [[ "$connected_ssid" == "$ssid" ]]; then
-            if check_internet; then
-                local speed
-                speed=$(measure_speed)
-                log_message "SUCCESS" "Connected to $ssid (Speed: ${speed}Mbps)" \
-                          "تم الاتصال بـ $ssid (السرعة: ${speed}Mbps)"
-                return 0
-            else
-                log_message "WARN" "Connected to $ssid but no internet (attempt $retry/3)" \
-                          "تم الاتصال بـ $ssid لكن لا يوجد إنترنت (محاولة $retry/3)"
-                [[ $retry -lt 3 ]] && sleep 3
-            fi
-        else
-            log_message "WARN" "Failed to connect to $ssid, got $connected_ssid (attempt $retry/3)" \
-                      "فشل الاتصال بـ $ssid، تم الاتصال بـ $connected_ssid (محاولة $retry/3)"
-            [[ $retry -lt 3 ]] && sleep 3
-        fi
-    done
-
-    log_message "ERROR" "Failed to establish connection to $ssid after 3 attempts" \
-               "فشل إنشاء اتصال مع $ssid بعد 3 محاولات"
-    return 1
-}
-
-# البحث عن الشبكات المفتوحة - مطلوب
-find_open_networks() {
-    local scan_results
-    scan_results=$(scan_networks)
-    local open_networks=""
-
-    [[ -z "$scan_results" ]] && return
-
-    while IFS=$'\t' read -r bssid ssid signal; do
-        [[ -z "$ssid" ]] && continue
-        
-        if ! is_valid_ssid "$ssid"; then
-            continue
-        fi
-
-        local signal_val
-        signal_val=$(echo "$signal" | grep -oE '[-+]?[0-9]+' | head -1)
-        [[ ! "$signal_val" =~ ^-?[0-9]+$ ]] && continue
-
-        local abs_signal=${signal_val#-}
-        ((abs_signal > 80)) && continue
-
-        open_networks="${open_networks}${ssid}\n"
-    done <<< "$scan_results"
-
-    echo -e "$open_networks" | sort -u
-}
-
-# تجربة الاتصال بالشبكات المفتوحة - مطلوب
-try_open_networks() {
-    local open_networks
-    open_networks=$(find_open_networks)
-
-    if [[ -z "$open_networks" ]]; then
-        return 1
-    fi
-
-    while read -r ssid; do
-        if ! is_valid_ssid "$ssid"; then
-            continue
-        fi
-
-        if connect_to_network "$ssid"; then
-            if check_internet; then
-                local speed
-                speed=$(measure_speed)
-                log_message "SUCCESS" "Connected to open network: $ssid with internet (Speed: ${speed}Mbps)" \
-                          "تم الاتصال بشبكة مفتوحة: $ssid مع إنترنت (السرعة: ${speed}Mbps)"
-                LAST_SUCCESSFUL_SSID="$ssid"
-                return 0
-            fi
-        fi
-    done <<< "$open_networks"
-
-    return 1
-}
-
-# وظيفة الاتصال العدواني - مطلوبة للحالات التي لا يوجد فيها اتصال بالإنترنت
-aggressive_connect() {
-    log_message "INFO" "Starting smart aggressive connection mode" "بدء وضع الاتصال الذكي"
-    
-    local scan_results
-    scan_results=$(scan_networks)
-    
-    local available_networks=()
-    while IFS=$'\t' read -r bssid ssid signal; do
-        [[ -z "$ssid" ]] && continue
-        if is_valid_ssid "$ssid"; then
-            available_networks+=("$ssid")
-        fi
-    done <<< "$scan_results"
-    
-    if [[ ${#available_networks[@]} -eq 0 ]]; then
-        log_message "WARN" "No available networks found in scan" "لم يتم العثور على شبكات متاحة في المسح"
-        if [[ "$AUTO_CONNECT_OPEN" == "yes" ]] && try_open_networks; then
-            return 0
-        fi
-        
-        log_message "ERROR" "All connection attempts failed, performing nuclear reset" "فشلت جميع محاولات الاتصال"
-        nuclear_reset
-        
-        local current_ssid
-        current_ssid=$(get_current_ssid)
-        
-        if [[ -n "$current_ssid" ]] && check_internet; then
-            log_message "SUCCESS" "Connected to $current_ssid after reset" "تم الاتصال بـ $current_ssid بعد إعادة التعيين"
-            return 0
-        fi
-        
-        return 1
-    fi
-    
-    # تجربة الشبكات المتاحة
-    for ssid in "${available_networks[@]}"; do
-        if connect_to_network "$ssid"; then
-            if check_internet; then
-                local speed
-                speed=$(measure_speed)
-                log_message "SUCCESS" "Connected to $ssid with speed ${speed}Mbps" "تم الاتصال بـ $ssid بسرعة ${speed}Mbps"
-                LAST_SUCCESSFUL_SSID="$ssid"
-                save_last_successful_ssid "$ssid"
-                return 0
-            fi
-        fi
-    done
-    
-    # إذا فشلت جميع المحاولات، تجربة الشبكات المفتوحة
-    if [[ "$AUTO_CONNECT_OPEN" == "yes" ]] && try_open_networks; then
-        return 0
-    fi
-    
-    return 1
-}
-
-# اختبار الاتصال الحالي وتحسينه - مطلوب
-test_and_optimize_connection() {
-    local current_ssid
-    current_ssid=$(get_current_ssid)
-
-    if [[ -z "$current_ssid" ]]; then
-        log_message "WARN" "Not connected to any network" "غير متصل بأي شبكة"
-        return 1
-    fi
-
-    if ! check_internet; then
-        log_message "WARN" "Connected to $current_ssid but no internet access" \
-                   "متصل بـ $current_ssid ولكن لا يوجد اتصال بالإنترنت"
-        return 1
-    fi
-
-    local current_speed
-    current_speed=$(measure_speed)
-
-    log_message "INFO" "Connected to $current_ssid with speed ${current_speed}Mbps" \
-              "متصل بشبكة $current_ssid بسرعة ${current_speed} ميجابت/ثانية"
-
-    if compare_float "$current_speed" "<" "$MIN_SPEED"; then
-        ((LOW_SPEED_COUNT++))
-        log_message "WARN" "Speed below threshold ($LOW_SPEED_COUNT/$LOW_SPEED_THRESHOLD)" \
-                   "السرعة أقل من الحد الأدنى ($LOW_SPEED_COUNT/$LOW_SPEED_THRESHOLD)"
-    
-        if [[ $LOW_SPEED_COUNT -ge $LOW_SPEED_THRESHOLD ]]; then
-            LOW_SPEED_COUNT=0
-            log_message "WARN" "Multiple low speed detections, searching for better network" \
-                       "تكرارات سرعة منخفضة، جاري البحث عن شبكة أفضل"
-        
-            if aggressive_connect; then
-                return 0
-            fi
-        else
-            return 0
-        fi
-    else
-        LOW_SPEED_COUNT=0
-    fi
-
-    return 0
-}
-
-# --------------------------
-# الوضع الليلي
-# --------------------------
-
-check_night_mode() {
-    [[ "$NIGHT_MODE" != "yes" ]] && return 0
-    
-    local current_time=$(date +%H:%M)
-    local current_minutes=$((10#${current_time%:*} * 60 + 10#${current_time#*:}))
-    local night_start_minutes=$((10#${NIGHT_START%:*} * 60 + 10#${NIGHT_START#*:}))
-    local night_end_minutes=$((10#${NIGHT_END%:*} * 60 + 10#${NIGHT_END#*:}))
-
-    local is_night_mode=false
-
-    if ((night_end_minutes < night_start_minutes)); then
-        if ((current_minutes >= night_start_minutes || current_minutes <= night_end_minutes)); then
-            is_night_mode=true
-        fi
-    else
-        if ((current_minutes >= night_start_minutes && current_minutes <= night_end_minutes)); then
-            is_night_mode=true
-        fi
-    fi
-
-    if $is_night_mode; then
-        if ((CHECK_INTERVAL != NIGHT_CHECK_INTERVAL)); then
-            CHECK_INTERVAL=$NIGHT_CHECK_INTERVAL
-            MIN_SPEED=0.3
-            SPEED_THRESHOLD=3.0
-            NEVER_BREAK_THRESHOLD=1.5
-        fi
-    else
-        if ((CHECK_INTERVAL != ORIGINAL_CHECK_INTERVAL)); then
-            CHECK_INTERVAL=$ORIGINAL_CHECK_INTERVAL
-            MIN_SPEED=$ORIGINAL_MIN_SPEED
-            SPEED_THRESHOLD=1.5
-            NEVER_BREAK_THRESHOLD=1.2
-        fi
-    fi
-}
-
-# إدارة الشبكات المخزنة
-manage_stored_networks() {
-    local current_networks
-    current_networks=$(sudo wpa_cli -i "$WIFI_INTERFACE" list_networks | tail -n +3 | wc -l)
-
-    if ((current_networks > MAX_NETWORK_SIZE)); then
-        local networks_to_remove=$((current_networks - MAX_NETWORK_SIZE))
-        local emergency_nets=()
-
-        for ssid in "${!SAFETY_NET[@]}"; do
-            emergency_nets+=("$ssid")
-        done
-
-        local stored_networks
-        stored_networks=$(sudo wpa_cli -i "$WIFI_INTERFACE" list_networks | awk -F'\t' 'NR>2 {print $1, $2}')
-
-        while read -r network && ((networks_to_remove > 0)); do
-            local network_id network_name
-            network_id=$(echo "$network" | cut -f1)
-            network_name=$(echo "$network" | cut -f2 | tr -d '"')
-
-            local is_emergency=false
-            for emergency_ssid in "${emergency_nets[@]}"; do
-                if [[ "$network_name" == "$emergency_ssid" ]]; then
-                    is_emergency=true
-                    break
-                fi
-            done
-
-            if ! $is_emergency; then
-                sudo wpa_cli -i "$WIFI_INTERFACE" remove_network "$network_id" &>/dev/null
-                ((networks_to_remove--))
-            fi
-        done <<< "$stored_networks"
-
-        if [[ "$READ_ONLY_WPA" != "yes" ]]; then
-            sudo wpa_cli -i "$WIFI_INTERFACE" save_config &>/dev/null
-        fi
-    fi
-}
-
-# التعامل مع الشبكات المخفية
-handle_hidden_networks() {
-    if [[ "$CONNECT_HIDDEN" == "yes" ]]; then
-        local stored_networks
-        stored_networks=$(sudo wpa_cli -i "$WIFI_INTERFACE" list_networks | tail -n +3 | awk '{print $1}')
-
-        for network_id in $stored_networks; do
-            sudo wpa_cli -i "$WIFI_INTERFACE" set_network "$network_id" scan_ssid 1 >/dev/null
-        done
-
-        if [[ "$READ_ONLY_WPA" != "yes" ]]; then
-            sudo wpa_cli -i "$WIFI_INTERFACE" save_config >/dev/null
-        fi
-    fi
-}
-
-# تفعيل وضع التخفي - قد يكون مطلوب لاحقاً
-enable_stealth_mode() {
-    if [[ "$STEALTH_MODE" == "yes" ]]; then
-        log_message "INFO" "Activating stealth mode" "تفعيل وضع التخفي"
-
-        sudo iptables -A OUTPUT -p icmp --icmp-type echo-request -j DROP &>/dev/null || true
-        sudo systemctl stop avahi-daemon &>/dev/null || true
-        sudo systemctl stop mdns &>/dev/null || true
-
-        if [[ -f /etc/dhcp/dhclient.conf ]]; then
-            sudo cp /etc/dhcp/dhclient.conf /etc/dhcp/dhclient.conf.bak 2>/dev/null
-            sudo sed -i 's/send host-name/#send host-name/g' /etc/dhcp/dhclient.conf
-        fi
-    fi
-}
-
-# --------------------------
-# إدارة الملفات
-# --------------------------
-
-setup_temp_files() {
-    if ! mkdir -p "$TEMP_WIFI_DIR" 2>/dev/null; then
-        log_message "ERROR" "Failed to create temp directory: $TEMP_WIFI_DIR" "فشل إنشاء المجلد المؤقت"
-        return 1
-    fi
-    
-    chmod 700 "$TEMP_WIFI_DIR" 2>/dev/null
-    
-    local temp_files=(
-        "$REMOTE_LOG_FILE"
-        "$TEMP_WIFI_FILE" 
-        "$LAST_SUCCESSFUL_SSID_FILE"
-        "$LAST_SCAN_FILE"
-    )
-    
-    for file in "${temp_files[@]}"; do
-        if ! touch "$file" 2>/dev/null; then
-            log_message "WARN" "Failed to create temp file: $file" "فشل إنشاء ملف مؤقت: $file"
-        else
-            chmod 600 "$file" 2>/dev/null
-        fi
-    done
-    
-    return 0
-}
-
-cleanup_temp_files() {
-    if [[ -f "$LOG_FILE" ]]; then
-        local file_size
-        file_size=$(stat -c%s "$LOG_FILE" 2>/dev/null || echo 0)
-        
-        if ((file_size > 1048576)); then
-            if tail -n 1000 "$LOG_FILE" > "$LOG_FILE.tmp" 2>/dev/null; then
-                mv "$LOG_FILE.tmp" "$LOG_FILE" 2>/dev/null
-            fi
-        fi
-    fi
-
-    if [[ -f "$REMOTE_LOG_FILE" ]]; then
-        local line_count
-        line_count=$(wc -l < "$REMOTE_LOG_FILE" 2>/dev/null || echo 0)
-        
-        if ((line_count > 500)); then
-            if tail -n 500 "$REMOTE_LOG_FILE" > "$TEMP_WIFI_DIR/remote_logs.tmp" 2>/dev/null; then
-                mv "$TEMP_WIFI_DIR/remote_logs.tmp" "$REMOTE_LOG_FILE" 2>/dev/null
-            fi
-        fi
-    fi
-
-    find "$TEMP_WIFI_DIR" -name "scan_*.tmp" -type f -mtime +1 -delete 2>/dev/null || true
-    find /tmp -name "wget-*" -o -name "curl-*" -type f -mtime +1 -delete 2>/dev/null || true
-}
-
-save_last_successful_ssid() {
-    local ssid="$1"
-    [[ -z "$ssid" ]] && return 1
-    
-    if echo "$ssid" > "$LAST_SUCCESSFUL_SSID_FILE" 2>/dev/null; then
-        chmod 600 "$LAST_SUCCESSFUL_SSID_FILE" 2>/dev/null
-        return 0
-    else
-        return 1
-    fi
-}
-
-load_last_successful_ssid() {
-    if [[ -f "$LAST_SUCCESSFUL_SSID_FILE" && -r "$LAST_SUCCESSFUL_SSID_FILE" ]]; then
-        LAST_SUCCESSFUL_SSID=$(cat "$LAST_SUCCESSFUL_SSID_FILE" 2>/dev/null || echo "")
-    fi
-}
-
-# --------------------------
-# إدارة القفل المحسنة - مع إصلاح Lock File corruption
-# --------------------------
-
-# تنظيف الـ lock files القديمة
-cleanup_stale_locks() {
-    if [[ -f "$LOCK_FILE" ]]; then
-        local old_pid
-        old_pid=$(cat "$LOCK_FILE" 2>/dev/null)
-        
-        if [[ -n "$old_pid" ]] && ! ps -p "$old_pid" &>/dev/null 2>&1; then
-            rm -f "$LOCK_FILE" "$LOCK_FILE.lock" 2>/dev/null
-        fi
-    fi
-    
-    # إزالة lock files قديمة (أكثر من 10 دقائق)
-    find /tmp -name "aasw.lock*" -type f -mmin +10 -delete 2>/dev/null || true
-}
-
-# تنظيف إجباري لملفات القفل
-force_cleanup_locks() {
-    rm -f "$LOCK_FILE" "$LOCK_FILE.lock" 2>/dev/null
-    pkill -f "aasw.sh" 2>/dev/null || true
-    sleep 2
-}
-
-acquire_lock() {
-    local lock_acquired=false
-    local attempts=0
-    local max_attempts=10
-    local lock_fd
-    
-    # تنظيف الـ lock files القديمة أولاً
-    cleanup_stale_locks
-
-    while [[ $attempts -lt $max_attempts ]]; do
-        if command -v flock &>/dev/null; then
-            # استخدام flock بطريقة آمنة مع file descriptor
-            exec 200>"$LOCK_FILE"
-            if flock -xn 200; then
-                echo "$$" >&200
-                log_message "DEBUG" "Lock acquired using flock (PID: $$)" "تم الحصول على القفل باستخدام flock"
-                lock_acquired=true
-                break
-            else
-                exec 200>&-  # إغلاق file descriptor عند الفشل
-            fi
-        else
-            # Atomic lock creation مع التحقق من صحة PID
-            if (
-                set -C
-                umask 077  # قفل الصلاحيات
-                echo "$$:$(date +%s):$(hostname)" > "$LOCK_FILE"
-            ) 2>/dev/null; then
-                log_message "DEBUG" "Lock acquired using atomic write (PID: $$)" "تم الحصول على القفل بالكتابة الذرية"
-                lock_acquired=true
-                break
-            elif [[ -f "$LOCK_FILE" ]]; then
-                local lock_info old_pid lock_time lock_host
-                lock_info=$(cat "$LOCK_FILE" 2>/dev/null)
-                
-                if [[ -n "$lock_info" ]]; then
-                    old_pid=$(echo "$lock_info" | cut -d':' -f1)
-                    lock_time=$(echo "$lock_info" | cut -d':' -f2)
-                    lock_host=$(echo "$lock_info" | cut -d':' -f3)
-                    
-                    # التحقق من صحة PID والمضيف
-                    if [[ -n "$old_pid" && "$lock_host" == "$(hostname)" ]]; then
-                        if ! kill -0 "$old_pid" 2>/dev/null; then
-                            log_message "WARN" "Stale lock detected (dead PID: $old_pid), removing" "قفل قديم مكتشف"
-                            rm -f "$LOCK_FILE" 2>/dev/null
-                            continue
-                        else
-                            # التحقق من عمر القفل (إذا كان أقدم من ساعة)
-                            local current_time=$(date +%s)
-                            if [[ -n "$lock_time" && $((current_time - lock_time)) -gt 3600 ]]; then
-                                log_message "WARN" "Very old lock detected (age: $((current_time - lock_time))s), forcing removal" "قفل قديم جداً"
-                                rm -f "$LOCK_FILE" 2>/dev/null
-                                continue
-                            fi
-                            exit_instance_error "$old_pid"
-                        fi
-                    else
-                        # قفل من مضيف آخر أو غير صالح
-                        log_message "WARN" "Invalid lock file format or different host, removing" "ملف قفل غير صالح"
-                        rm -f "$LOCK_FILE" 2>/dev/null
-                        continue
-                    fi
-                fi
-            fi
-        fi
-        
-        ((attempts++))
-        log_message "DEBUG" "Lock attempt $attempts/$max_attempts failed" "محاولة القفل $attempts/$max_attempts فشلت"
-        sleep 2
-    done
-
-    if ! $lock_acquired; then
-        log_message "ERROR" "Failed to acquire lock after $max_attempts attempts - forcing cleanup" \
-                   "فشل الحصول على القفل بعد $max_attempts محاولة - تنظيف إجباري"
-        force_cleanup_locks
-        return 1
-    fi
-    
-    # إنشاء handler للتنظيف عند الخروج
-    trap 'release_lock' EXIT
-    return 0
-}
-
-# إطلاق سراح القفل بطريقة آمنة
-release_lock() {
-    if [[ -f "$LOCK_FILE" ]]; then
-        local lock_info
-        lock_info=$(cat "$LOCK_FILE" 2>/dev/null)
-        local lock_pid=$(echo "$lock_info" | cut -d':' -f1 2>/dev/null)
-        
-        # التأكد أن هذا المعرف يملك القفل
-        if [[ "$lock_pid" == "$$" ]]; then
-            rm -f "$LOCK_FILE" 2>/dev/null
-            log_message "DEBUG" "Lock released successfully (PID: $$)" "تم إطلاق القفل بنجاح"
-        fi
-    fi
-    
-    # إغلاق file descriptor إذا كان مفتوح
-    exec 200>&- 2>/dev/null || true
-}
-
-# ========================================
-# DISPLAY FUNCTIONS - دوال العرض
-# ========================================
-
-show_awacs_banner() {
-    if [[ "$VERBOSE" == "true" ]]; then
-        case "$LANGUAGE" in
-            "en")
-                echo ""
-                echo "  █████╗ ██╗    ██╗ █████╗  ██████╗███████╗"
-                echo "  ██╔══██╗██║    ██║██╔══██╗██╔════╝██╔════╝"
-                echo "  ███████║██║ █╗ ██║███████║██║     ███████╗"
-                echo "  ██╔══██║██║███╗██║██╔══██║██║     ╚════██║"
-                echo "  ██║  ██║╚███╔███╔╝██║  ██║╚██████╗███████║"
-                echo "  ╚═╝  ╚═╝ ╚══╝╚══╝ ╚═╝  ╚═╝ ╚═════╝╚══════╝"
-                echo ""
-                echo "           🛡️ AWACS v1.0 - Always Watching, Always Connected 🛡️"
-                echo "               Advanced WiFi Auto Connection System"
-                echo ""
-                echo "         Device: $DEVICE_NAME ($DEVICE_ID)"
-                echo "         Language: $LANGUAGE | Logging: $LOG_MODE | Mode: $SPEED_MODE"
-                echo "         Created by: NetStorm - AbuNaif from Kuwait 🇰🇼"
-                echo ""
-                ;;
-            "ar")
-                echo ""
-                echo "  █████╗ ██╗    ██╗ █████╗  ██████╗███████╗"
-                echo "  ██╔══██╗██║    ██║██╔══██╗██╔════╝██╔════╝"
-                echo "  ███████║██║ █╗ ██║███████║██║     ███████╗"
-                echo "  ██╔══██║██║███╗██║██╔══██║██║     ╚════██║"
-                echo "  ██║  ██║╚███╔███╔╝██║  ██║╚██████╗███████║"
-                echo "  ╚═╝  ╚═╝ ╚══╝╚══╝ ╚═╝  ╚═╝ ╚═════╝╚══════╝"
-                echo ""
-                echo "           🛡️ أواكس v1.0 - مراقبة دائمة، اتصال مستمر 🛡️"
-                echo "               أنظمة واي فاي التلقائية كاملة السيطرة"
-                echo ""
-                echo "         الجهاز: $DEVICE_NAME ($DEVICE_ID)"
-                echo "         اللغة: $LANGUAGE | التسجيل: $LOG_MODE | الوضع: $SPEED_MODE"
-                echo "         بواسطة: نت ستورم - أبونايف (محمد المطيري) من الكويت 🇰🇼"
-                echo ""
-                ;;
-            "both")
-                echo ""
-                echo "  █████╗ ██╗    ██╗ █████╗  ██████╗███████╗"
-                echo "  ██╔══██╗██║    ██║██╔══██╗██╔════╝██╔════╝"
-                echo "  ███████║██║ █╗ ██║███████║██║     ███████╗"
-                echo "  ██╔══██║██║███╗██║██╔══██║██║     ╚════██║"
-                echo "  ██║  ██║╚███╔███╔╝██║  ██║╚██████╗███████║"
-                echo "  ╚═╝  ╚═╝ ╚══╝╚══╝ ╚═╝  ╚═╝ ╚═════╝╚══════╝"
-                echo ""
-                echo "    🛡️ AWACS v1.0 - Always Watching, Always Connected 🛡️"
-                echo "    🛡️ أواكس v1.0 - مراقبة دائمة، اتصال مستمر 🛡️"
-                echo "         Advanced WiFi Auto Connection System"
-                echo "         أنظمة واي فاي التلقائية كاملة السيطرة"
-                echo ""
-                echo "         Device: $DEVICE_NAME ($DEVICE_ID) | الجهاز: $DEVICE_NAME ($DEVICE_ID)"
-                echo "         Language: $LANGUAGE | Mode: $SPEED_MODE | Logging: $LOG_MODE"
-                echo "         اللغة: $LANGUAGE | الوضع: $SPEED_MODE | التسجيل: $LOG_MODE"
-                echo "         Created by: NetStorm - AbuNaif (Kuwait) | بواسطة: نت ستورم - أبونايف (الكويت) 🇰🇼"
-                echo ""
-                ;;
-        esac
-    fi
-}
-
-show_help_message() {
-    case "$LANGUAGE" in
-        "en")
-            echo "=== AWACS v1.0 - Advanced WiFi Auto Connection System ==="
-            echo "Always Watching, Always Connected"
-            echo ""
-            echo "Usage: $0 [options] [command]"
-            echo ""
-            echo "Performance Mode Options:"
-            echo "  --performance    - High performance mode (60s recovery)"
-            echo "  --balanced       - Balanced mode (90s recovery) - DEFAULT"
-            echo "  --stability      - Maximum stability mode (155s recovery)"
-            echo ""
-            echo "Language Options:"
-            echo "  --lang-en        - English interface only"
-            echo "  --lang-ar        - Arabic interface only"
-            echo "  --lang-both      - Bilingual interface - DEFAULT"
-            echo ""
-            echo "Logging Options:"
-            echo "  --log-local      - Local logging only - DEFAULT"
-            echo "  --log-remote     - Remote logging only"
-            echo "  --log-both       - Local and remote logging"
-            echo "  --log-none       - No logging"
-            echo ""
-            echo "System Options:"
-            echo "  -d, --daemon     - Run in daemon mode"
-            echo "  -v, --verbose    - Verbose output - DEFAULT"
-            echo "  -q, --quiet      - Quiet operation"
-            echo ""
-            echo "Available Commands:"
-            echo "  status           - Show current network status"
-            echo "  evaluate_networks- Evaluate and score available networks"
-            echo "  find_best_network- Find the best available network"
-            echo "  measure_speed    - Measure current connection speed"
-            echo "  scan_networks    - Scan and show available networks"
-            echo "  check_internet   - Check internet connectivity"
-            echo "  help            - Show this help message"
-            echo ""
-            echo "File Path Configuration:"
-            echo "  Edit these variables at the top of the script:"
-            echo "  CUSTOM_WORK_DIR=\"/path/to/work\"     # Custom work directory"
-            echo "  CUSTOM_LOG_DIR=\"/path/to/logs\"      # Custom log directory"
-            echo "  CUSTOM_TEMP_DIR=\"/path/to/temp\"     # Custom temp directory"
-            echo "  CUSTOM_CONFIG_DIR=\"/path/to/config\" # Custom config directory"
-            echo "  Leave empty for default (beside script)"
-            echo ""
-            echo "Examples:"
-            echo "  $0 --performance --lang-en    # High performance, English only"
-            echo "  $0 --stability --daemon       # Maximum stability, daemon mode"
-            echo "  $0 --lang-ar status           # Arabic interface, show status"
-            ;;
-        "ar")
-            echo "=== أواكس v1.0 - أنظمة واي فاي التلقائية كاملة السيطرة ==="
-            echo "مراقبة دائمة، اتصال مستمر"
-            echo ""
-            echo "الاستخدام: $0 [خيارات] [أمر]"
-            echo ""
-            echo "خيارات وضع الأداء:"
-            echo "  --performance    - وضع الأداء العالي (استرداد 60 ثانية)"
-            echo "  --balanced       - الوضع المتوازن (استرداد 90 ثانية) - افتراضي"
-            echo "  --stability      - وضع الاستقرار الأقصى (استرداد 155 ثانية)"
-            echo ""
-            echo "خيارات اللغة:"
-            echo "  --lang-en        - واجهة إنجليزية فقط"
-            echo "  --lang-ar        - واجهة عربية فقط"
-            echo "  --lang-both      - واجهة ثنائية اللغة - افتراضي"
-            echo ""
-            echo "خيارات التسجيل:"
-            echo "  --log-local      - تسجيل محلي فقط - افتراضي"
-            echo "  --log-remote     - تسجيل بعيد فقط"
-            echo "  --log-both       - تسجيل محلي وبعيد"
-            echo "  --log-none       - بدون تسجيل"
-            echo ""
-            echo "خيارات النظام:"
-            echo "  -d, --daemon     - تشغيل في وضع الخدمة"
-            echo "  -v, --verbose    - إخراج مفصل - افتراضي"
-            echo "  -q, --quiet      - تشغيل هادئ"
-            echo ""
-            echo "الأوامر المتاحة:"
-            echo "  status           - عرض حالة الشبكة الحالية"
-            echo "  evaluate_networks- تقييم وتسجيل الشبكات المتاحة"
-            echo "  find_best_network- العثور على أفضل شبكة متاحة"
-            echo "  measure_speed    - قياس سرعة الاتصال الحالية"
-            echo "  scan_networks    - فحص وعرض الشبكات المتاحة"
-            echo "  check_internet   - فحص الاتصال بالإنترنت"
-            echo "  help            - عرض رسالة المساعدة هذه"
-            echo ""
-            echo "تكوين مسارات الملفات:"
-            echo "  عدّل هذه المتغيرات في أعلى السكريبت:"
-            echo "  CUSTOM_WORK_DIR=\"/مسار/للعمل\"       # مجلد العمل المخصص"
-            echo "  CUSTOM_LOG_DIR=\"/مسار/للسجلات\"      # مجلد السجلات المخصص"
-            echo "  CUSTOM_TEMP_DIR=\"/مسار/للمؤقت\"      # مجلد الملفات المؤقتة المخصص"
-            echo "  CUSTOM_CONFIG_DIR=\"/مسار/للتكوين\"   # مجلد التكوين المخصص"
-            echo "  اتركها فارغة للافتراضي (جانب السكريبت)"
-            echo ""
-            echo "أمثلة:"
-            echo "  $0 --performance --lang-ar    # أداء عالي، عربي فقط"
-            echo "  $0 --stability --daemon       # استقرار أقصى، وضع خدمة"
-            echo "  $0 --lang-en status           # واجهة إنجليزية، عرض الحالة"
-            ;;
-        "both")
-            echo "=== AWACS v1.0 - Advanced WiFi Auto Connection System ==="
-            echo "=== أواكس v1.0 - أنظمة واي فاي التلقائية كاملة السيطرة ==="
-            echo "Always Watching, Always Connected | مراقبة دائمة، اتصال مستمر"
-            echo ""
-            echo "Usage: $0 [options] [command] | الاستخدام: $0 [خيارات] [أمر]"
-            echo ""
-            echo "Performance Mode | وضع الأداء: --performance (عالي), --balanced (متوازن), --stability (مستقر)"
-            echo "Language | اللغة: --lang-en (إنجليزي), --lang-ar (عربي), --lang-both (كلاهما)"
-            echo "Logging | التسجيل: --log-local (محلي), --log-remote (بعيد), --log-both (كلاهما)"
-            echo "System | النظام: --daemon (خدمة), --verbose (مفصل), --quiet (هادئ)"
-            echo ""
-            echo "File Paths | مسارات الملفات: Edit CUSTOM_*_DIR variables | عدّل متغيرات CUSTOM_*_DIR"
-            echo ""
-            echo "Examples | أمثلة:"
-            echo "  $0 --performance --lang-both  # High performance, bilingual"
-            echo "  $0 --stability --daemon       # Max stability, daemon mode"
-            ;;
-    esac
-}
-
-# ========================================
-# GRACEFUL DEGRADATION SYSTEM - نظام التدهور التدريجي
-# ========================================
-
-# متغيرات نظام التدهور التدريجي
-declare -g DEGRADATION_LEVEL=0
-declare -g CONSECUTIVE_FAILURES=0
-declare -g LAST_SUCCESSFUL_CONNECTION=0
-declare -g DEGRADATION_ACTIVE=false
-
-# مستويات التدهور التدريجي
-# Level 0: Normal operation | تشغيل عادي
-# Level 1: Reduced frequency | تقليل التكرار  
-# Level 2: Emergency mode | وضع الطوارئ
-# Level 3: Survival mode | وضع البقاء
-
-apply_graceful_degradation() {
-    local failure_count="$1"
-    local last_success_age="$2"
-    local current_time=$(date +%s)
-    
-    # حساب العمر منذ آخر اتصال ناجح (بالثواني)
-    if [[ "$last_success_age" -eq 0 ]]; then
-        last_success_age=$((current_time - LAST_SUCCESSFUL_CONNECTION))
-    fi
-    
-    local new_degradation_level=0
-    
-    # تحديد مستوى التدهور بناءً على الأخطاء والوقت
-    if ((failure_count >= 3 && last_success_age > 300)); then
-        new_degradation_level=1  # 5+ دقائق بدون اتصال
-    fi
-    
-    if ((failure_count >= 6 && last_success_age > 900)); then
-        new_degradation_level=2  # 15+ دقيقة بدون اتصال
-    fi
-    
-    if ((failure_count >= 10 && last_success_age > 1800)); then
-        new_degradation_level=3  # 30+ دقيقة بدون اتصال
-    fi
-    
-    # تطبيق التدهور فقط إذا كان هناك تغيير
-    if [[ "$new_degradation_level" != "$DEGRADATION_LEVEL" ]]; then
-        DEGRADATION_LEVEL="$new_degradation_level"
-        
-        case "$DEGRADATION_LEVEL" in
-            0)
-                log_message "SUCCESS" "Returning to normal operation mode" "العودة لوضع التشغيل العادي"
-                DEGRADATION_ACTIVE=false
-                # استعادة القيم الأصلية
-                configure_speed_mode
-                ;;
-                
-            1)
-                log_message "WARN" "Entering reduced frequency mode (Level 1)" "دخول وضع التكرار المنخفض (مستوى 1)"
-                DEGRADATION_ACTIVE=true
-                # تقليل التكرار بـ 50%
-                CHECK_INTERVAL=$((CHECK_INTERVAL * 2))
-                SCAN_INTERVAL=$((SCAN_INTERVAL * 2))
-                ;;
-                
-            2)
-                log_message "WARN" "Entering emergency mode (Level 2)" "دخول وضع الطوارئ (مستوى 2)"
-                DEGRADATION_ACTIVE=true
-                # تقليل التكرار بـ 75%
-                CHECK_INTERVAL=$((CHECK_INTERVAL * 4))
-                SCAN_INTERVAL=$((SCAN_INTERVAL * 3))
-                # تعطيل الميزات غير الضرورية
-                CONSERVE_RESOURCES="yes"
-                AUTO_CONNECT_OPEN="no"
-                ;;
-                
-            3)
-                log_message "ERROR" "Entering survival mode (Level 3)" "دخول وضع البقاء (مستوى 3)"
-                DEGRADATION_ACTIVE=true
-                # تقليل التكرار إلى الحد الأدنى
-                CHECK_INTERVAL=60
-                SCAN_INTERVAL=120
-                # تعطيل جميع الميزات الإضافية
-                CONSERVE_RESOURCES="yes"
-                AUTO_CONNECT_OPEN="no"
-                CONNECT_HIDDEN="no"
-                STEALTH_MODE="yes"
-                # تقليل timeout values
-                SWITCH_TIMEOUT=2
-                ;;
-        esac
-        
-        log_message "INFO" "Degradation applied - Level: $DEGRADATION_LEVEL, Check: ${CHECK_INTERVAL}s, Scan: ${SCAN_INTERVAL}s" \
-                   "تم تطبيق التدهور - مستوى: $DEGRADATION_LEVEL، فحص: ${CHECK_INTERVAL}ث، مسح: ${SCAN_INTERVAL}ث"
-    fi
-}
-
-# استعادة الحالة العادية عند نجاح الاتصال
-restore_normal_operation() {
-    CONSECUTIVE_FAILURES=0
-    LAST_SUCCESSFUL_CONNECTION=$(date +%s)
-    
-    if [[ "$DEGRADATION_ACTIVE" == "true" ]]; then
-        log_message "SUCCESS" "Connection restored, checking if normal operation can be resumed" \
-                   "تم استعادة الاتصال، فحص إمكانية العودة للتشغيل العادي"
-        
-        # تطبيق تدهور مع القيم الجديدة
-        apply_graceful_degradation 0 0
-    fi
-}
-
-# فحص دوري لحالة التدهور
-monitor_degradation_status() {
-    local current_time=$(date +%s)
-    local time_since_success=$((current_time - LAST_SUCCESSFUL_CONNECTION))
-    
-    # إذا مر وقت طويل منذ آخر فحص للتدهور
-    if ((time_since_success % 300 == 0 && time_since_success > 0)); then
-        log_message "DEBUG" "Degradation status - Level: $DEGRADATION_LEVEL, Failures: $CONSECUTIVE_FAILURES, Time since success: ${time_since_success}s" \
-                   "حالة التدهور - مستوى: $DEGRADATION_LEVEL، أخطاء: $CONSECUTIVE_FAILURES، الوقت منذ النجاح: ${time_since_success}ث"
-    fi
-}
-
-# --------------------------
-# الدالة الرئيسية
-# --------------------------
-
-main() {
-    # Show startup banner | عرض شعار البدء
-    show_awacs_banner
-    
-    # تهيئة متغيرات التدهور التدريجي
-    LAST_SUCCESSFUL_CONNECTION=$(date +%s)
-    
-    log_message "INFO" "Starting AWACS v1.0 (Ultra-Stable)" "بدء أواكس v1.0 (فائق الاستقرار)"
-    
-    # تشغيل التحقق من صحة التكوين
-    if ! validate_configuration; then
-        log_message "ERROR" "Configuration validation failed, exiting" "فشل التحقق من التكوين، خروج"
-        exit 1
-    fi
-    
-    # إعلام وضع السرعة المفعّل
-    case "$SPEED_MODE" in
-        "fast")
-            log_message "INFO" "Fast mode activated - prioritizes speed over stability" \
-                       "تم تفعيل الوضع السريع - يفضل السرعة على الاستقرار"
-            ;;
-        "balanced")
-            log_message "INFO" "Balanced mode activated - optimal speed/stability balance" \
-                       "تم تفعيل الوضع المتوازن - توازن مثالي بين السرعة والاستقرار"
-            ;;
-        "conservative")
-            log_message "INFO" "Conservative mode activated - prioritizes stability over speed" \
-                       "تم تفعيل الوضع المحافظ - يفضل الاستقرار على السرعة"
-            ;;
-    esac
-    
-    check_dependencies
-    if ! detect_wifi_interfaces; then
-        log_message "ERROR" "Failed to detect WiFi interfaces, attempting hardware recovery" \
-                   "فشل اكتشاف واجهات WiFi، محاولة إصلاح الأجهزة"
-        if ! recover_from_failure; then
-            log_message "ERROR" "WiFi hardware recovery failed, system may need reboot" \
-                       "فشل إصلاح أجهزة WiFi، قد يحتاج النظام لإعادة تشغيل"
-            sudo reboot
-            exit 1
-        fi
-        # إعادة المحاولة بعد الإصلاح
-        if ! detect_wifi_interfaces; then
-            log_message "ERROR" "WiFi interfaces still not available after recovery" \
-                       "واجهات WiFi ما زالت غير متاحة بعد الإصلاح"
-            sudo reboot
-            exit 1
-        fi
-    fi
-    setup_temp_files
-    load_last_successful_ssid
-    check_wpa_supplicant_status
-    
-    if ! check_wifi_hardware; then
-        log_message "ERROR" "WiFi hardware issues detected, attempting recovery" \
-                   "تم اكتشاف مشاكل في أجهزة الواي فاي، محاولة الإصلاح"
-        recover_from_failure
-        sleep 5
-    fi
-    
-    manage_stored_networks
-    
-    if [[ "$CONNECT_HIDDEN" == "yes" ]]; then
-        handle_hidden_networks
-    fi
-    
-    enable_stealth_mode
-    
-    local current_ssid
-    current_ssid=$(get_current_ssid)
-    
-    if [[ -z "$current_ssid" ]]; then
-        log_message "INFO" "No network connection, searching for available networks" \
-                   "لا يوجد اتصال بشبكة، جاري البحث عن شبكات متاحة"
-        aggressive_connect
-    elif ! check_internet; then
-        log_message "WARN" "Connected to $current_ssid but no internet access, trying alternative networks" \
-                   "متصل بـ $current_ssid ولكن لا يوجد اتصال بالإنترنت، محاولة شبكات بديلة"
-        aggressive_connect
-    else
-        log_message "SUCCESS" "Already connected to $current_ssid with internet access" \
-                   "متصل بالفعل بـ $current_ssid مع وجود اتصال بالإنترنت"
-        LAST_SUCCESSFUL_SSID="$current_ssid"
-        save_last_successful_ssid "$current_ssid"
-        adjust_scan_interval 1
-    fi
-    
-    SYSTEM_BOOTING=false
-    
-    local failure_count=0
-    local consecutive_success=0
-    local last_cleanup=$(date +%s)
-    
-    > "$LAST_SCAN_FILE"
-    
-    while true; do
-        check_night_mode
-        
-        local current_time=$(date +%s)
-        if ((current_time - last_cleanup >= 3600)); then
-            cleanup_temp_files
-            last_cleanup=$current_time
-        fi
-        
-        if ! check_wifi_hardware; then
-            log_message "ERROR" "Hardware issue detected, attempting recovery" \
-                       "تم اكتشاف مشكلة في الأجهزة، محاولة الإصلاح"
-            recover_from_failure
-        fi
-        
-        if ((RANDOM % 10 == 0)); then
-            check_wpa_supplicant_status
-        fi
-        
-        if test_and_optimize_connection; then
-            INTERNET_CONNECTED=true
-            failure_count=0
-            ((consecutive_success++))
-            
-            # استعادة الحالة العادية عند نجاح الاتصال
-            restore_normal_operation
-            
-            adjust_scan_interval 1
-            
-            if ((consecutive_success >= 5)); then
-                upload_pending_logs
-                consecutive_success=0
-            fi
-        else
-            INTERNET_CONNECTED=false
-            ((failure_count++))
-            consecutive_success=0
-            CONSECUTIVE_FAILURES=$failure_count
-            
-            # تطبيق التدهور التدريجي
-            apply_graceful_degradation "$failure_count" 0
-            
-            adjust_scan_interval 0
-            
-            log_message "ERROR" "Internet connection lost (Attempt $failure_count/$MAX_FAILURES)" \
-                      "فقدان الاتصال بالإنترنت (محاولة $failure_count من $MAX_FAILURES)"
-            
-            if ((failure_count >= MAX_FAILURES)); then
-                if [[ -n "$LAST_SUCCESSFUL_SSID" ]]; then
-                    log_message "INFO" "Final attempt: Trying to reconnect to last successful network ($LAST_SUCCESSFUL_SSID) before reboot" \
-                  "المحاولة الأخيرة: إعادة الاتصال بآخر شبكة ناجحة ($LAST_SUCCESSFUL_SSID) قبل إعادة التشغيل"
-        
-                    if connect_to_network "$LAST_SUCCESSFUL_SSID"; then
-                        if check_internet; then
-                            local speed
-                            speed=$(measure_speed)
-                
-                            if compare_float "$speed" ">" "$MIN_SPEED"; then
-                                log_message "SUCCESS" "Successfully reconnected to $LAST_SUCCESSFUL_SSID with acceptable speed (${speed}Mbps)" \
-                               "تم إعادة الاتصال بنجاح بشبكة $LAST_SUCCESSFUL_SSID بسرعة مقبولة (${speed}Mbps)"
-                                failure_count=0
-                                INTERNET_CONNECTED=true
-                                consecutive_success=1
-                                continue
-                            fi
-                        fi
-                    fi
-                fi
-            
-                log_message "ERROR" "Maximum failures reached, rebooting system" \
-                          "تم الوصول للحد الأقصى من المحاولات، جاري إعادة تشغيل النظام"
-                sync
-                sleep 2
-                sudo reboot
-            fi
-            
-            log_message "INFO" "Attempting to reconnect..." "محاولة إعادة الاتصال..."
-            
-            if aggressive_connect; then
-                if check_internet; then
-                    failure_count=0
-                    log_message "SUCCESS" "Successfully reconnected to network" "تم إعادة الاتصال بالشبكة بنجاح"
-                fi
-            fi
-        fi
-        
-        # مراقبة حالة التدهور
-        monitor_degradation_status
-        
-        sleep "$CHECK_INTERVAL"
-    done
-}
-
-# دالة تشغيل الأوامر
-run_function() {
-    case "$1" in
-        "status")
-            check_dependencies no_restart
-            detect_wifi_interfaces
-            local current_ssid
-            current_ssid=$(get_current_ssid)
-            local internet_status
-            internet_status=$(check_internet && echo "Available ✓" || echo "Not available ✗")
-
-            log_message "INFO" "=== Network Status ===" "=== حالة الشبكة ==="
-            log_message "INFO" "Current network: ${current_ssid:-Not connected}" "الشبكة الحالية: ${current_ssid:-غير متصل}"
-            log_message "INFO" "Internet connection: $internet_status" "الاتصال بالإنترنت: $internet_status"
-            
-            if [[ "$internet_status" == "Available ✓" ]]; then
-                local speed
-                speed=$(measure_speed)
-                log_message "INFO" "Connection speed: ${speed}Mbps" "سرعة الاتصال: ${speed}Mbps"
-            fi
-            ;;
-        "evaluate_networks")
-            check_dependencies no_restart
-            detect_wifi_interfaces
-            log_message "INFO" "Evaluating available networks" "تقييم الشبكات المتاحة"
-            local scan_results
-            scan_results=$(scan_networks)
-            if [[ -n "$scan_results" ]]; then
-                local networks_info
-                networks_info=$(analyze_available_networks "$scan_results")
-                if [[ -n "$networks_info" ]]; then
-                    echo "=== Network Analysis ==="
-                    while IFS="|" read -r ssid signal speed score is_current priority; do
-                        [[ -z "$ssid" ]] && continue
-                        local status=""
-                        [[ "$is_current" == "1" ]] && status=" (Current ✓)"
-                        echo "SSID: $ssid | Signal: ${signal}dBm | Est.Speed: ${speed}Mbps | Score: $score | Priority: $priority$status"
-                    done <<< "$networks_info"
-                fi
-            fi
-            ;;
-        "find_best_network")
-            check_dependencies no_restart
-            detect_wifi_interfaces
-            local best_network
-            best_network=$(find_best_network)
-            if [[ -n "$best_network" ]]; then
-                log_message "SUCCESS" "Best network found: $best_network" "تم العثور على أفضل شبكة: $best_network"
-            else
-                log_message "INFO" "Current network is optimal" "الشبكة الحالية مثلى"
-            fi
-            ;;
-        "measure_speed")
-            check_dependencies no_restart
-            detect_wifi_interfaces
-            local speed
-            speed=$(measure_speed)
-            log_message "SUCCESS" "Current connection speed: ${speed}Mbps" "سرعة الاتصال الحالية: ${speed}Mbps"
-            ;;
-        "scan_networks")
-            check_dependencies no_restart
-            detect_wifi_interfaces
-            log_message "INFO" "Scanning for available networks" "البحث عن الشبكات المتاحة"
-            local scan_results
-            scan_results=$(scan_networks)
-            
-            if [[ -n "$scan_results" ]]; then
-                log_message "SUCCESS" "Network scan completed" "اكتمل مسح الشبكات"
-                echo "=== Available Networks ==="
-                echo "$scan_results" | while IFS=$'\t' read -r bssid ssid signal; do
-                    echo "SSID: $ssid | Signal: $signal | BSSID: $bssid"
-                done
-            else
-                log_message "WARN" "No networks found" "لم يتم العثور على شبكات"
-            fi
-            ;;
-        "check_internet")
-            check_dependencies no_restart
-            if check_internet; then
-                log_message "SUCCESS" "Internet connection: Available ✓" "الاتصال بالإنترنت: متوفر ✓"
-            else
-                log_message "ERROR" "Internet connection: Not available ✗" "الاتصال بالإنترنت: غير متوفر ✗"
-            fi
-            ;;
-        "help"|"--help"|"-h")
-            show_help_message
-            log_message "INFO" "Usage: $0 [options] [command]" "الاستخدام: $0 [خيارات] [أمر]"
-            echo ""
-            echo "Speed Mode Options:"
-            echo "  --fast           - Fast mode (60s to reboot) - less stability"
-            echo "  --balanced       - Balanced mode (90s to reboot) - DEFAULT"
-            echo "  --conservative   - Conservative mode (155s to reboot) - max stability"
-            echo ""
-            echo "Available commands:"
-            echo "  status           - Show current network status"
-            echo "  evaluate_networks- Evaluate and score available networks"
-            echo "  find_best_network- Find the best available network"
-            echo "  measure_speed    - Measure current connection speed"
-            echo "  scan_networks    - Scan and show available networks"
-            echo "  check_internet   - Check internet connectivity"
-            echo "  help            - Show this help message"
-            echo ""
-            echo "Examples:"
-            echo "  $0 --fast        # Run in fast mode"
-            echo "  $0 --conservative status  # Check status in conservative mode"
-            ;;
-        *)
-            log_message "ERROR" "Unknown command: $1" "أمر غير معروف: $1"
-            log_message "INFO" "Use '$0 help' for available commands" "استخدم '$0 help' للأوامر المتاحة"
-            return 1
-            ;;
-    esac
-}
-
-# نقطة الدخول الرئيسية
-if [[ -n "$1" ]]; then
-    run_function "$1"
-    exit $?
+  fi
+  exit 0
 fi
-
-# الحصول على القفل مع معالجة الأخطاء
-if ! acquire_lock; then
-    log_message "ERROR" "Another instance is running or lock acquisition failed" \
-               "يوجد تشغيل آخر أو فشل الحصول على القفل"
-    exit 1
-fi
-
+printf '%d\n' "$$" >"$LOCK"   # PID is display-only; flock stays the authority
+# A human typing bare `awacs.sh` gets the daemon in FOREGROUND — say so once (the
+# rc.local respawn has no TTY and must stay silent by contract).
+[[ -t 1 ]] && echo -e "${CC}AWACS ${VERSION}${C0}: foreground daemon on ${IF} — Ctrl+C يوقفه بأمان، ${CW}awacs.sh help${C0} لبقية الأوامر"
 main
