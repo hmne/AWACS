@@ -322,7 +322,7 @@
 
 ### `manual trial: OfficeNet upload 2000 kbps, the 1800 kbps bar met - staying on it`
 
-`OK`. بعد 15 ثانية على شبكة التجربة قاسها قياس واحد عند الحد أو فوقه؛ تبقى الشبكة والجواب `switched` (أو `joined`). وفي وضع الإشارة يقرأ السطر `signal mode` مكان الرفع وتبقى أي شبكة توصل الإنترنت.
+`OK`. القياس الواحد، الجاري داخل الـ 15 ثانية على شبكة التجربة، وجدها عند الحد أو فوقه؛ تبقى الشبكة والجواب `switched` (أو `joined`). وفي وضع الإشارة يقرأ السطر `signal mode` مكان الرفع وتبقى أي شبكة توصل الإنترنت.
 
 ### `manual trial: OfficeNet uploads at 700 kbps, under the 1800 kbps bar (HomeNet 1200 kbps at 150%) - going back`
 

@@ -320,7 +320,7 @@ INFO, the opening line of every trial. The daemon names where it leaves from, th
 
 ### `manual trial: OfficeNet upload 2000 kbps, the 1800 kbps bar met - staying on it`
 
-OK. After 15 s on the trial network one probe measured it at or above the bar; the network stays and the answer is `switched` (or `joined`). In signal mode the line reads `signal mode` in place of the upload and any network that delivers internet stays.
+OK. The one probe, run inside the 15 s on the trial network, measured it at or above the bar; the network stays and the answer is `switched` (or `joined`). In signal mode the line reads `signal mode` in place of the upload and any network that delivers internet stays.
 
 ### `manual trial: OfficeNet uploads at 700 kbps, under the 1800 kbps bar (HomeNet 1200 kbps at 150%) - going back`
 

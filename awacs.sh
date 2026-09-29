@@ -189,6 +189,8 @@ OPEN_ID_FILE=$RUN_DIR/open_id  # crash-proof crutch marker: a respawn reaps its 
 PROBE_FILE=$RUN_DIR/probe      # wget fallback needs a real file to POST
 PROBE_FAIL=$RUN_DIR/probe.fail # the last upload probe accepted no bytes: up_kbps runs in a
                                # subshell, so a marker carries the verdict beside the printed 0
+TRIAL_PROBE=$RUN_DIR/trial.kbps # a manual trial's probe runs in the background inside the
+                                # owner's window; its kbps comes back through this file
 STARTS_FILE=$RUN_DIR/starts    # starts of this boot, counted by the lock winner (tmpfs: per boot)
 # The reporting channels' own state. Files, not variables: the senders run in background
 # children (the live line, the wifi cell), and a child cannot carry an edge back to the loop.
@@ -222,7 +224,7 @@ readonly VERSION TICK NET_FAIL_TICKS ASSOC_WAIT PROBE_KB MIN_UP_KBPS UP_STRIKES 
          SWITCH_GAIN_PCT DANCE_COOLDOWN PREF_CHECK REBOOT_AFTER_MIN OPEN_NETWORKS \
          NIGHT_MODE NIGHT_START NIGHT_END NIGHT_MIN_UP_KBPS NIGHT_GAIN_PCT \
          NIGHT_DANCE_COOLDOWN STEALTH_MODE DEBUG LOG_FILE LOG_CAP RUN_DIR LOCK \
-         SCAN_CACHE SCAN_EMPTY SCAN_DEAF SCAN_AT SCAN_TTL SPOOL SPOOL_CAP OPEN_ID_FILE PROBE_FILE PROBE_FAIL SAFETY_NET \
+         SCAN_CACHE SCAN_EMPTY SCAN_DEAF SCAN_AT SCAN_TTL SPOOL SPOOL_CAP OPEN_ID_FILE PROBE_FILE PROBE_FAIL TRIAL_PROBE SAFETY_NET \
          STREAM_MIN_KBPS SITE_URL LOG_TARGET PROBE_URL REPORT_WIFI SITE_TZ SITE_API \
          LOG_LANG SITE_LANG STARTS_FILE REBOOT_MARK REBOOT_SPOOL REBOOT_COUNT \
          SITE_DOWN WIFI_DOWN SCAN_DOWN LOG_DOWN SPOOL_DROP \
@@ -2798,6 +2800,7 @@ late_loss() {  # $1 = the network lost: the loss ends an open episode, its uncou
 # key, ciphertext or blob ever reaches a log or a site line (SSIDs may).
 readonly CMD_TTL=60           # a command older than this by uptime waited behind a recovery: answered expired
 readonly TRIAL_WAIT=15        # the owner's number: a manual trial holds the network this long, then measures
+readonly TRIAL_HEAD=5         # the trying answer stands alone this long before the probe starts, so the site's polls see it
 readonly ORIGIN_KBPS_AGE=120  # the origin's last measurement counts as fresh this long, else one probe
 CMD_EPOCH=0                   # the site's epoch of the command being answered (its id on the site)
 KEY_SENT=0                    # the key reached the site this boot (2xx): later sends are skipped
@@ -2805,6 +2808,7 @@ CMD_STUCK=0                   # the consumer could not remove the command file: 
 KEY_REFUSED_SAID=0            # the site holds another key: said once per boot
 ORIGIN_ID="" ORIGIN_NAME="" ORIGIN_KBPS=0   # where a trial leaves from, for the way back
 TRIAL_AT=0                    # unix time of the last manual trial: the loop counts it as a dance
+TRIAL_HOLD_PID="" TRIAL_PROBE_PID=""   # the trial's window sleep and its probe child while they run: on_shutdown ends them
 
 cmd_ready_drop() {  # the lock winner's exit: capture.sh must not signal a PID that no longer traps
   (( LOCK_WON )) && rm -f "$CMD_READY" 2>/dev/null
@@ -2970,19 +2974,48 @@ wifi_trial_origin() {  # $1 = the challenger's name: where the device leaves fro
                 "تجربة يدوية: $1 لمدة ${TRIAL_WAIT} ث، نترك ${ORIGIN_NAME} (${ORIGIN_KBPS} كيلوبت/ث) - تبقى فقط إذا وصلت $(( ORIGIN_KBPS * CUR_GAIN / 100 )) كيلوبت/ث أو أكثر"
 }
 
+wait_pid() {  # $1 = a background child of this shell: wait until it has really ended. A trapped
+  # signal (the site's USR1 landing during a trial) makes wait return early with the trap's
+  # status while the child still runs, so the wait is repeated; the flag the trap set stays
+  # for the loop top, which is the one consumer of commands.
+  while kill -0 "$1" 2>/dev/null; do wait "$1" 2>/dev/null || :; done
+}
+
 wifi_trial_run() {  # $1 = id (linked, internet proven), $2 = its name, $3 = the answer when it stays
-  # (switched | joined). The challenger's trial: TRIAL_WAIT seconds on the network, one probe,
-  # then the never-break bar (CUR_GAIN of the origin) decides: stay, or return_to the origin.
-  # Never the ordinary evaluation or fight(): they treat the incumbent as home, and this network
-  # is a challenger. enable_all on every exit. Signal mode keeps any network that delivers.
-  local trial_kbps bar
+  # (switched | joined). The challenger's trial: the owner's TRIAL_WAIT window opens the moment
+  # the link delivers; the trying answer stands alone for TRIAL_HEAD s, then the one upload probe
+  # runs inside the window (the measuring answer), and the verdict comes at the later of the
+  # window and head plus probe (a 200 KB probe takes 2-8 s on the owner's uplinks, so the network
+  # is held the full 15 s and the probe's seconds add nothing to them). Then the never-break bar
+  # (CUR_GAIN of the origin) decides: stay, or return_to the origin. Never the ordinary evaluation
+  # or fight(): they treat the incumbent as home, and this network is a challenger. enable_all
+  # on every exit. Signal mode keeps any network that delivers.
+  local trial_kbps="" bar
   enable_all
+  sleep "$TRIAL_WAIT" 9>&- & TRIAL_HOLD_PID=$!   # the window; 9>&- so the child never holds the lock
   cmd_answer trying "$2"
   report_wifi   # the cell follows the network now, not at the next minute
-  sleep "$TRIAL_WAIT"
-  trial_kbps=$(up_kbps); note_kbps "$trial_kbps"
+  # The trying answer stands alone for TRIAL_HEAD s: the site polls every 2 s, and an answer
+  # replaced 92 ms later (round 1, measured) never reached it. The head also keeps the answer's
+  # and the cell's bytes off the probe's number. The head rides the probe's pid slot.
+  sleep "$TRIAL_HEAD" 9>&- & TRIAL_PROBE_PID=$!
+  wait_pid "$TRIAL_PROBE_PID"; TRIAL_PROBE_PID=""
+  rm -f "$TRIAL_PROBE" 2>/dev/null
+  { up_kbps >"$TRIAL_PROBE" 2>/dev/null; } 9>&- & TRIAL_PROBE_PID=$!
+  cmd_answer measuring "$2"
+  wait_pid "$TRIAL_PROBE_PID"; TRIAL_PROBE_PID=""
+  IFS= read -r trial_kbps <"$TRIAL_PROBE" 2>/dev/null || :   # up_kbps prints no newline: read still assigns
+  rm -f "$TRIAL_PROBE" 2>/dev/null
+  if [[ ! $trial_kbps =~ ^[0-9]{1,9}$ ]]; then
+    # No number came back. A PROBE_FAIL marker means the target refused the bytes (said below);
+    # without one the result file itself failed, and the owner hears which file before 0 applies.
+    probe_failed || site_log WARN "manual trial: the probe's result file ${TRIAL_PROBE} could not be read - counting $2 as 0 kbps" \
+                                  "التجربة اليدوية: ملف نتيجة القياس ${TRIAL_PROBE} ما انقرأ - نحسب $2 على 0 كيلوبت/ث"
+    trial_kbps=0
+  fi
+  note_kbps "$trial_kbps"
   probe_failed && say_probe_fail "$2"
-  cmd_answer measuring "$2" "$trial_kbps"
+  wait_pid "$TRIAL_HOLD_PID"; TRIAL_HOLD_PID=""   # the network is held for the owner's full window whatever the probe took
   bar=$(( ORIGIN_KBPS * CUR_GAIN / 100 ))
   if ! probe_on || [[ -z $ORIGIN_ID ]] || (( trial_kbps > 0 && trial_kbps >= bar )); then
     site_log OK "manual trial: $2 $(up_words "$trial_kbps"), the ${bar} kbps bar met - staying on it" \
@@ -3970,6 +4003,10 @@ on_shutdown() {  # $1 = signal name. The GRACEFUL box — kept exactly as design
   # First act, before the goodbye: a Ctrl+C landing MID-FIGHT (after a
   # select_network narrowed the live supplicant) must hand back full autonomy.
   enable_all 2>/dev/null || :
+  # A trial's window sleep or probe child would outlive this shell: ended here, so no orphan
+  # holds the trial open after the goodbye (the probe's curl still ends by its own 15 s cap).
+  [[ -n $TRIAL_HOLD_PID ]] && { kill "$TRIAL_HOLD_PID" 2>/dev/null || :; }
+  [[ -n $TRIAL_PROBE_PID ]] && { kill "$TRIAL_PROBE_PID" 2>/dev/null || :; }
   cmd_ready_drop
   say_stopping "${1:-TERM}"
     echo
