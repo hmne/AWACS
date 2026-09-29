@@ -24,6 +24,7 @@
 # LOG_TARGET="local"           # "local" | "both" | "remote"  (both and remote need SITE_URL)
 # PROBE_URL=""                 # http(s)://... | empty = the site endpoint, or signal mode
 # REPORT_WIFI="auto"           # "auto" | "yes" | "no"
+# SITE_COMMANDS="yes"          # "yes" | "no" - take the site page's WiFi commands (scan, switch, join, hold)
 # SITE_TZ=""                   # Area/City | empty = the device's own zone
 # LOG_LANG="en"                # "en" | "ar" - the local log
 # SITE_LANG="en"               # "en" | "ar" - the lines sent to the site

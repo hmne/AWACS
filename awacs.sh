@@ -66,6 +66,7 @@ SITE_API="receiver.php"  # endpoint file name under that path (the shipped recei
 LOG_TARGET="local"   # local | both | remote — both/remote need SITE_URL; remote keeps only WARN/ERROR locally
 PROBE_URL=""         # upload-speed probe target (any URL accepting a POST body); default = the site's endpoint
 REPORT_WIFI="auto"   # publish the Wi-Fi cell (kbps,visible,total,band,SSID) to the site: auto | yes | no
+SITE_COMMANDS="yes"  # take the site page's WiFi commands (scan, switch, join, hold) and register the device key: yes | no
 SITE_TZ=""           # time zone stamped on SITE log lines (e.g. Asia/Kuwait); empty = the device's own zone
 LOG_LANG="en"        # language of the LOCAL log's story lines: en | ar (DEBUG diagnostics stay English)
 SITE_LANG="en"       # language of the lines sent to the site: en | ar — independent of LOG_LANG
@@ -166,6 +167,7 @@ unset _kv _k
 # a remote target without a site is downgraded to local — and SAID once in the log.
 case ${LOG_TARGET:-} in local|both|remote) ;; *) LOG_TARGET=local; FALLEN_KNOBS+="LOG_TARGET " ;; esac
 case ${REPORT_WIFI:-} in auto|yes|no) ;; *) REPORT_WIFI=auto; FALLEN_KNOBS+="REPORT_WIFI " ;; esac
+case ${SITE_COMMANDS:-} in yes|no) ;; *) SITE_COMMANDS=yes; FALLEN_KNOBS+="SITE_COMMANDS " ;; esac
 case ${LOG_LANG:-}  in en|ar) ;; *) LOG_LANG=en; FALLEN_KNOBS+="LOG_LANG " ;; esac
 case ${SITE_LANG:-} in en|ar) ;; *) SITE_LANG=en; FALLEN_KNOBS+="SITE_LANG " ;; esac
 # The three optional strings: empty is a choice, not a fault; a non-empty value that fails is.
@@ -176,6 +178,7 @@ SITE_URL=${SITE_URL:-}; PROBE_URL=${PROBE_URL:-}; SITE_TZ=${SITE_TZ:-}
 [[ ${SITE_API:-}  =~ ^[A-Za-z0-9_][A-Za-z0-9_./-]{0,63}$ && ${SITE_API:-} != *..* ]] || { SITE_API="receiver.php"; FALLEN_KNOBS+="SITE_API "; }
 LT_DOWNGRADED=0
 [[ -n $SITE_URL || $LOG_TARGET == local ]] || { LOG_TARGET=local; LT_DOWNGRADED=1; }
+[[ -n $SITE_URL ]] || SITE_COMMANDS=no   # no site, no page to take a command from: the channel stays closed
 # Derived AFTER the conf so a RUN_DIR override carries all five files with it.
 [[ ${RUN_DIR:-} == /* ]] || RUN_DIR=/run/awacs   # relative/empty override = nonsense
 LOCK=$RUN_DIR/lock          # flock authority; also stores the daemon PID (display-only)
@@ -651,7 +654,7 @@ devid_change_check() {  # the cell cadence: a boot script may write /tmp/device_
 }
 
 say_running_with() {  # the effective settings in one INFO line, measured or signal mode
-  local cell cell_ar open open_ar zone zone_ar stored emerg floors floors_ar cool
+  local cell cell_ar open open_ar zone zone_ar stored emerg floors floors_ar cool cmds cmds_ar
   stored=$(known_ids | cut -f1 | sort -u | grep -c .) || stored=0
   emerg=${#SAFETY_NET[@]}
   if [[ $OPEN_NETWORKS == yes ]]; then open=yes; open_ar=نعم; else open=no; open_ar=لا; fi
@@ -659,6 +662,9 @@ say_running_with() {  # the effective settings in one INFO line, measured or sig
   elif [[ -z $SITE_URL ]]; then cell="off (no SITE_URL)"; cell_ar="معطّلة (بلا SITE_URL)"
   elif [[ $REPORT_WIFI == auto ]] && ! remote_on; then cell="off (auto with LOG_TARGET local)"; cell_ar="معطّلة (auto مع LOG_TARGET محلي)"
   else cell=on; cell_ar=مفعّلة; fi
+  if [[ -z $SITE_URL ]]; then cmds="off (no SITE_URL)"; cmds_ar="معطّلة (بلا SITE_URL)"
+  elif [[ $SITE_COMMANDS == no ]]; then cmds="off (SITE_COMMANDS=no)"; cmds_ar="معطّلة (SITE_COMMANDS=no)"
+  else cmds=on; cmds_ar=مفعّلة; fi
   zone=${SITE_TZ:-the device zone}; zone_ar=${SITE_TZ:-توقيت الجهاز}
   if probe_on; then
     if [[ $NIGHT_MODE == yes ]]; then
@@ -669,11 +675,11 @@ say_running_with() {  # the effective settings in one INFO line, measured or sig
       floors_ar="حد الرفع ${MIN_UP_KBPS} كيلوبت/ث (الوضع الليلي معطّل)"
     fi
     cool=$(( (DANCE_COOLDOWN + 59) / 60 ))
-    site_log INFO "running with: measured mode, ${floors}, switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${cool} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${cell}, ${stored} stored networks, ${emerg} emergency, open networks ${open}, stamps in ${zone}" \
-                  "نعمل بـ: وضع القياس، ${floors_ar}، ربح التبديل ${SWITCH_GAIN_PCT}%، تقييم واحد كل ${cool} دقيقة، إعادة تشغيل بعد ${REBOOT_AFTER_MIN} دقيقة تعطّل، خانة الواي فاي ${cell_ar}، ${stored} شبكة مخزنة، ${emerg} طوارئ، الشبكات المفتوحة ${open_ar}، التوقيت ${zone_ar}"
+    site_log INFO "running with: measured mode, ${floors}, switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${cool} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${cell}, site commands ${cmds}, ${stored} stored networks, ${emerg} emergency, open networks ${open}, stamps in ${zone}" \
+                  "نعمل بـ: وضع القياس، ${floors_ar}، ربح التبديل ${SWITCH_GAIN_PCT}%، تقييم واحد كل ${cool} دقيقة، إعادة تشغيل بعد ${REBOOT_AFTER_MIN} دقيقة تعطّل، خانة الواي فاي ${cell_ar}، أوامر الموقع ${cmds_ar}، ${stored} شبكة مخزنة، ${emerg} طوارئ، الشبكات المفتوحة ${open_ar}، التوقيت ${zone_ar}"
   else
-    site_log INFO "running with: signal mode (no probe target - networks chosen by signal), reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${cell}, ${stored} stored networks, ${emerg} emergency, open networks ${open}, stamps in ${zone}" \
-                  "نعمل بـ: وضع الإشارة (لا هدف للقياس - نختار الشبكة بقوة الإشارة)، إعادة تشغيل بعد ${REBOOT_AFTER_MIN} دقيقة تعطّل، خانة الواي فاي ${cell_ar}، ${stored} شبكة مخزنة، ${emerg} طوارئ، الشبكات المفتوحة ${open_ar}، التوقيت ${zone_ar}"
+    site_log INFO "running with: signal mode (no probe target - networks chosen by signal), reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${cell}, site commands ${cmds}, ${stored} stored networks, ${emerg} emergency, open networks ${open}, stamps in ${zone}" \
+                  "نعمل بـ: وضع الإشارة (لا هدف للقياس - نختار الشبكة بقوة الإشارة)، إعادة تشغيل بعد ${REBOOT_AFTER_MIN} دقيقة تعطّل، خانة الواي فاي ${cell_ar}، أوامر الموقع ${cmds_ar}، ${stored} شبكة مخزنة، ${emerg} طوارئ، الشبكات المفتوحة ${open_ar}، التوقيت ${zone_ar}"
   fi
 }
 
@@ -2916,6 +2922,7 @@ wifi_cmd_check() {  # $1 = engaged (the loop's fight flag): the one consumer, at
   # validates, dedupes and ages the command, answers taken and hands it to its handler. The file
   # goes before anything else runs, so a crash inside a handler cannot replay the command.
   local line up epoch cmd key blob last="" now hold=0
+  [[ $SITE_COMMANDS == yes ]] || { WIFI_CMD=0; return 0; }   # SITE_COMMANDS=no: nothing read, nothing answered
   (( WIFI_CMD )) || [[ -s $CMD_FILE ]] || return 0
   WIFI_CMD=0
   [[ -s $CMD_FILE ]] || return 0
@@ -3511,7 +3518,7 @@ main() {
   enable_all
   arm_hidden   # hidden networks are common — without directed probes they never appear
   load_joined  # networks joined from the site, re-added at every start (runtime only)
-  wifi_key_ensure && wifi_key_register   # the site's key for typed passwords; said once, never its value
+  if [[ $SITE_COMMANDS == yes ]]; then wifi_key_ensure && wifi_key_register; fi   # the site's key for typed passwords; said once, never its value; none with SITE_COMMANDS=no
 
   local fails=0 strikes=0 flow here last_dance=0 last_pref=0 pref_hits=0 runs=0 \
         cur_id cand_id cur_name cand_name ok_ticks=0 engaged=0 online=0 online_on \
@@ -3561,7 +3568,7 @@ main() {
                 "حكم مثبَّت من قبل التوقف يُعاد إرساله بلا تثبيت - التثبيت انتهى مع التوقف"
     fi
   fi
-  : >"$CMD_READY" 2>/dev/null || :
+  if [[ $SITE_COMMANDS == yes ]]; then : >"$CMD_READY" 2>/dev/null || :; fi   # the relay looks for this marker: absent = the site has no say
   while :; do
     clock_step_check
     wifi_cmd_check "$engaged"   # the one consumer of a site command: never inside a fight
@@ -3605,7 +3612,7 @@ main() {
       (( ok_ticks == 3 )) && install_tools   # first PROVEN-healthy moment, once per boot
       # The key too: the start often had no internet, and after that once a healthy minute until
       # the site takes it (a site that was down, or the owner's reset after a reflash).
-      (( ok_ticks == 3 || (ok_ticks > 3 && ok_ticks % 6 == 1) )) && wifi_key_register
+      [[ $SITE_COMMANDS == yes ]] && (( ok_ticks == 3 || (ok_ticks > 3 && ok_ticks % 6 == 1) )) && wifi_key_register
       # WiFi cell heartbeat every ~60s (battery cadence) — backgrounded, lock-free.
       # The scan list rides the same minute: report_scan decides in this shell (a new scan, the
       # rate) and backgrounds only its POST.

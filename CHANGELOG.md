@@ -28,6 +28,7 @@ Fuller reporting and the site's WiFi commands. No knob changed its meaning and t
 - A device key `/etc/awacs.key` (root 0600, `openssl rand -hex 32`), registered with the site as `file=wifi_key` at start, at the third healthy tick and then once a healthy minute until the site takes it; a different key needs a proof made with the previous one. A password typed on the site travels as `<iv_hex>.<ct_base64>.<mac_hex>` (AES-256-CBC under derived keys, HMAC checked first) and is opened with `openssl` alone.
 - Networks joined from the site are kept in `/etc/awacs.networks` (root 0600) once their password proved itself, re-added at every start and after the rungs that restart the supplicant or NetworkManager; an unfinished join is reaped at the next start through `/run/awacs/join_id`. On NetworkManager two keyfile classes in `/run`: the trial `awacs-join-<epoch>-<pid>` and the persistent `awacs-joined-<hexssid>`; the deletion guard accepts these two beside the crutch and safety classes, and nothing else.
 - The shipped receivers accept `tmp/wifi_state.tmp` and the `wifi_key` registration (stored as `private/wifi.key`, mode 0600, denied to browsers under Apache).
+- `SITE_COMMANDS` (`yes` | `no`, default `yes`): whether the daemon takes the site page's WiFi commands and registers its device key. `no` closes the channel for a site that only reads; without `SITE_URL` it is `no` regardless. The start summary says `site commands on|off (...)`; the wizard takes `--site-commands`.
 
 ### Changed
 

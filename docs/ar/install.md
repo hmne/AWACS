@@ -60,6 +60,7 @@ curl -fsSL https://raw.githubusercontent.com/hmne/AWACS/main/install.sh | sudo b
 | `--site URL` | العنوان الأساسي لموقع التقارير |
 | `--probe URL` | هدف قياس سرعة الرفع |
 | `--report-wifi auto\|yes\|no` | نشر خانة الواي فاي إلى الموقع |
+| `--site-commands yes\|no` | أخذ أوامر الواي فاي من صفحة الموقع (مسح، تبديل، انضمام، تثبيت)؛ no تقفل القناة |
 | `--tz ZONE` | المنطقة الزمنية لأختام سجل الموقع، مثل `Europe/Berlin` |
 | `--log-lang en\|ar` | لغة أسطر القصة في اللوق المحلي. المعالج يسأل عنها؛ افتراضيها لغة المعالج نفسه. |
 | `--site-lang en\|ar` | لغة الأسطر المرسلة إلى الموقع. تُسأل فقط حين تكون وجهة اللوق `both` أو `remote`. |

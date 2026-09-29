@@ -53,11 +53,12 @@ LOG_TARGET=""       # local | both | remote
 SITE_URL=""
 PROBE_URL=""
 REPORT_WIFI=""      # auto | yes | no  (written only when given)
+SITE_COMMANDS=""    # yes | no  (written only when given)
 SITE_TZ=""          # time zone of the site log stamps (written only when given)
 SITE_API=""         # endpoint file name under <site>/<device id>/ (written only when given; awacs.sh default receiver.php)
 LOG_LANG=""         # language of the local log's story lines, en | ar (written only when chosen)
 SITE_LANG=""        # language of the lines sent to the site, en | ar (written only when chosen)
-EX_LOG_TARGET="" EX_SITE_URL="" EX_PROBE_URL="" EX_REPORT_WIFI="" EX_SITE_TZ="" EX_SITE_API="" EX_LOG_LANG="" EX_SITE_LANG=""  # from an existing conf
+EX_LOG_TARGET="" EX_SITE_URL="" EX_PROBE_URL="" EX_REPORT_WIFI="" EX_SITE_COMMANDS="" EX_SITE_TZ="" EX_SITE_API="" EX_LOG_LANG="" EX_SITE_LANG=""  # from an existing conf
 DEVICE_ID=""
 SERVICE=""          # systemd | rc.local
 ASSUME_YES=0
@@ -602,21 +603,23 @@ load_existing_conf() {  # the reporting values of an existing conf become the re
       SITE_URL)    EX_SITE_URL=${v%/} ;;
       PROBE_URL)   EX_PROBE_URL=$v ;;
       REPORT_WIFI) EX_REPORT_WIFI=$v ;;
+      SITE_COMMANDS) EX_SITE_COMMANDS=$v ;;
       SITE_TZ)     EX_SITE_TZ=$v ;;
       SITE_API)    EX_SITE_API=$v ;;
       LOG_LANG)    EX_LOG_LANG=$v ;;
       SITE_LANG)   EX_SITE_LANG=$v ;;
     esac
-  done < <(grep -E '^(LOG_TARGET|SITE_URL|PROBE_URL|REPORT_WIFI|SITE_TZ|SITE_API|LOG_LANG|SITE_LANG)=' "$CONF" 2>/dev/null || :)
+  done < <(grep -E '^(LOG_TARGET|SITE_URL|PROBE_URL|REPORT_WIFI|SITE_COMMANDS|SITE_TZ|SITE_API|LOG_LANG|SITE_LANG)=' "$CONF" 2>/dev/null || :)
   [[ $EX_LOG_TARGET =~ ^(local|both|remote)$ ]] || EX_LOG_TARGET=""
   [[ $EX_REPORT_WIFI =~ ^(auto|yes|no)$ ]]     || EX_REPORT_WIFI=""
+  [[ $EX_SITE_COMMANDS =~ ^(yes|no)$ ]]        || EX_SITE_COMMANDS=""
   [[ -z $EX_SITE_URL ]]  || valid_url "$EX_SITE_URL"  || EX_SITE_URL=""
   [[ -z $EX_PROBE_URL ]] || valid_url "$EX_PROBE_URL" || EX_PROBE_URL=""
   [[ -z $EX_SITE_TZ ]]   || valid_tz "$EX_SITE_TZ"    || EX_SITE_TZ=""
   [[ -z $EX_SITE_API ]]  || valid_api "$EX_SITE_API"  || EX_SITE_API=""
   [[ -z $EX_LOG_LANG ]]  || valid_lang "$EX_LOG_LANG" || EX_LOG_LANG=""
   [[ -z $EX_SITE_LANG ]] || valid_lang "$EX_SITE_LANG" || EX_SITE_LANG=""
-  [[ -n $EX_LOG_TARGET$EX_SITE_URL$EX_PROBE_URL$EX_REPORT_WIFI$EX_SITE_TZ ]] && say "$(t reuse_note)"
+  [[ -n $EX_LOG_TARGET$EX_SITE_URL$EX_PROBE_URL$EX_REPORT_WIFI$EX_SITE_COMMANDS$EX_SITE_TZ ]] && say "$(t reuse_note)"
   return 0
 }
 http_code() {  # URL [curl data option...] -> the HTTP code, 000 when nothing answered
@@ -694,6 +697,7 @@ step_log_target() {
   [[ -n $SITE_URL ]]    || SITE_URL=$EX_SITE_URL
   [[ -n $PROBE_URL ]]   || PROBE_URL=$EX_PROBE_URL
   [[ -n $REPORT_WIFI ]] || REPORT_WIFI=$EX_REPORT_WIFI
+  [[ -n $SITE_COMMANDS ]] || SITE_COMMANDS=$EX_SITE_COMMANDS
   [[ -n $SITE_TZ ]]     || SITE_TZ=$EX_SITE_TZ
   [[ -n $SITE_API ]]    || SITE_API=$EX_SITE_API
   if [[ -z $LOG_TARGET ]]; then
@@ -812,7 +816,7 @@ render_conf() {  # prints the new conf: existing lines kept, managed keys replac
   else
     while IFS= read -r line; do
       case $line in
-        SITE_URL=*|LOG_TARGET=*|PROBE_URL=*|REPORT_WIFI=*|SITE_TZ=*|SITE_API=*|LOG_LANG=*|SITE_LANG=*) continue ;;
+        SITE_URL=*|LOG_TARGET=*|PROBE_URL=*|REPORT_WIFI=*|SITE_COMMANDS=*|SITE_TZ=*|SITE_API=*|LOG_LANG=*|SITE_LANG=*) continue ;;
         "${CONF_MARK}"*) continue ;;
         'SAFETY_NET["'*)
           name=${line#SAFETY_NET[\"}
@@ -827,6 +831,7 @@ render_conf() {  # prints the new conf: existing lines kept, managed keys replac
   printf 'SITE_URL="%s"\n' "$SITE_URL"
   [[ -n $PROBE_URL ]]   && printf 'PROBE_URL="%s"\n' "$PROBE_URL"
   [[ -n $REPORT_WIFI ]] && printf 'REPORT_WIFI="%s"\n' "$REPORT_WIFI"
+  [[ -n $SITE_COMMANDS ]] && printf 'SITE_COMMANDS="%s"\n' "$SITE_COMMANDS"
   [[ -n $SITE_TZ ]]     && printf 'SITE_TZ="%s"\n' "$SITE_TZ"
   [[ -n $SITE_API ]]    && printf 'SITE_API="%s"\n' "$SITE_API"
   [[ -n $LOG_LANG ]]    && printf 'LOG_LANG="%s"\n' "$LOG_LANG"
@@ -1214,6 +1219,7 @@ parse_args() {
       --site)        SITE_URL=${2%/}; shift 2 ;;
       --probe)       PROBE_URL=$2; shift 2 ;;
       --report-wifi) REPORT_WIFI=$2; shift 2 ;;
+      --site-commands) SITE_COMMANDS=$2; shift 2 ;;
       --tz)          SITE_TZ=$2; shift 2 ;;
       --api)         SITE_API=$2; shift 2 ;;
       --log-lang)    LOG_LANG=$2; shift 2 ;;
@@ -1242,6 +1248,7 @@ parse_args() {
   [[ -z $LOG_TARGET || $LOG_TARGET =~ ^(local|both|remote)$ ]] || die "--log must be local, both or remote"
   [[ -z $SERVICE || $SERVICE =~ ^(systemd|rc\.local)$ ]] || die "--service must be systemd or rc.local"
   [[ -z $REPORT_WIFI || $REPORT_WIFI =~ ^(auto|yes|no)$ ]] || die "--report-wifi must be auto, yes or no"
+  [[ -z $SITE_COMMANDS || $SITE_COMMANDS =~ ^(yes|no)$ ]] || die "--site-commands must be yes or no"
   if [[ -n $DEVICE_ID ]] && ! valid_device_id "$DEVICE_ID"; then die "$(msg devid_bad "$DEVICE_ID")"; fi
   if [[ -n $SITE_URL ]] && ! valid_url "$SITE_URL"; then die "$(t site_bad)"; fi
   if [[ -n $PROBE_URL ]] && ! valid_url "$PROBE_URL"; then die "$(t probe_bad)"; fi

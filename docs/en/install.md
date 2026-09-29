@@ -50,6 +50,7 @@ curl -fsSL https://raw.githubusercontent.com/hmne/AWACS/main/install.sh | sudo b
 | `--site URL` | reporting site base URL |
 | `--probe URL` | upload-speed probe target |
 | `--report-wifi auto\|yes\|no` | publish the WiFi cell to the site |
+| `--site-commands yes\|no` | take the site page's WiFi commands (scan, switch, join, hold); no closes the channel |
 | `--tz ZONE` | time zone of the site log stamps, e.g. `Europe/Berlin` |
 | `--log-lang en\|ar` | Language of the local log's story lines. The wizard asks; the default is the wizard's own language. |
 | `--site-lang en\|ar` | Language of the lines sent to the site. Asked only when the log target is `both` or `remote`. |

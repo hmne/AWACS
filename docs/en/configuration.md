@@ -33,7 +33,7 @@ Numbers. Seventeen knobs are numeric: `TICK`, `NET_FAIL_TICKS`, `ASSOC_WAIT`, `P
 
 Clock times. `NIGHT_START` and `NIGHT_END` must match `^([01]?[0-9]|2[0-3]):[0-5][0-9]$`: hour 0 to 23 with one or two digits, a colon, minutes 00 to 59 with two digits. Each falls back to its own default (`22:00`, `06:00`) independently.
 
-Mode words. These are exact and case-sensitive. `LOG_TARGET` accepts `local`, `both` or `remote`, else `local`. `REPORT_WIFI` accepts `auto`, `yes` or `no`, else `auto`. `LOG_LANG` and `SITE_LANG` accept `en` or `ar`, else `en`.
+Mode words. These are exact and case-sensitive. `LOG_TARGET` accepts `local`, `both` or `remote`, else `local`. `REPORT_WIFI` accepts `auto`, `yes` or `no`, else `auto`. `SITE_COMMANDS` accepts `yes` or `no`, else `yes`. `LOG_LANG` and `SITE_LANG` accept `en` or `ar`, else `en`.
 
 Switches. `OPEN_NETWORKS`, `NIGHT_MODE`, `STEALTH_MODE` and `DEBUG` are never rewritten. Each is compared with the exact lowercase word `yes` at the one place it is used; any other value, `Yes`, `true`, `1` and an empty value included, means off, with no fallback and no warning.
 
@@ -65,8 +65,8 @@ The ` -> ${SITE_URL}` part is present only when `SITE_URL` is set and shows the 
 
 After the confirmation line the daemon says what it read, once per start: the settings verdict when the file was not applied (the three WARN lines under [Loading](#loading)); the knobs that fell back, when any did (`settings file ${AWACS_CONF} applied, but ${n} values failed validation and use their defaults: ${names}`, names only, never values); `wifi cell asked for (REPORT_WIFI=yes) but SITE_URL is empty - nothing to publish to` when that pair is set; the time-zone and device-id checks described under [SITE_TZ](#site_tz) and [DEVICE_ID](#device_id); and then one INFO line with the working settings, in the form the decisions that follow will use:
 
-- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: measured mode, floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night (night ${NIGHT_START}-${NIGHT_END}), switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${minutes} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${m} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}`
-- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: signal mode (no probe target - networks chosen by signal), reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${m} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (no `SITE_URL` and no `PROBE_URL`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: measured mode, floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night (night ${NIGHT_START}-${NIGHT_END}), switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${minutes} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, site commands ${on|off (SITE_COMMANDS=no)|off (no SITE_URL)}, ${n} stored networks, ${m} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: signal mode (no probe target - networks chosen by signal), reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, site commands ${on|off (SITE_COMMANDS=no)|off (no SITE_URL)}, ${n} stored networks, ${m} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (no `SITE_URL` and no `PROBE_URL`)
 
 With `NIGHT_MODE` off the floor part reads `floor ${MIN_UP_KBPS} kbps (night profile off)`. The minutes are `DANCE_COOLDOWN` in whole minutes, rounded up. The stored count is the number of distinct stored networks the backend lists at that moment (0 with a mute supplicant or a missing `nmcli`); the emergency count is the number of `SAFETY_NET` entries, never their names. No address appears in the line. With a site, `LOG_TARGET=both`, three stored networks and every other knob at its default the line reads: `running with: measured mode, floor 400/200 kbps day/night (night 22:00-06:00), switch gain 150%, one evaluation per 20 min, reboot after 30 min wedged, wifi cell on, 3 stored networks, 0 emergency, open networks yes, stamps in the device zone`.
 
@@ -92,7 +92,7 @@ Log lines:
 
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] reporting: ${LOG_TARGET} -> ${SITE_URL} | probe: ${probe target} | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}`
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] LOG_TARGET asked for the site but SITE_URL is empty - running local-only`
-- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: measured mode, floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night (night ${NIGHT_START}-${NIGHT_END}), switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${minutes} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${m} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (the working settings, once per start; see [Applying changes](#applying-changes); no address in it)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: measured mode, floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night (night ${NIGHT_START}-${NIGHT_END}), switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${minutes} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, site commands ${on|off (SITE_COMMANDS=no)|off (no SITE_URL)}, ${n} stored networks, ${m} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (the working settings, once per start; see [Applying changes](#applying-changes); no address in it)
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] site did not take the log line (${reply}) - holding lines, delivery retried about every ${minutes} min` (once per episode, when a line's POST gets a reply outside 2xx and 3xx while the internet is up; the reply reads `http ${code}` or `no reply in 4 s`; the refused line and this one wait in the spool; the minutes are 30 passes of `TICK`, 5 with the default)
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] delivered ${n} held lines stamped ${first} to ${last} - they stand above this line with their own times` (after every delivery of held lines, sent in the foreground after them, except the start flush of a start that held only its own start lines; `delivered 1 held line stamped ${first} - it stands above this line with its own time` for a single line; the stamps are `HH:MM`)
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] site reachable again - delivered ${n} held lines stamped ${first} to ${last}, they stand above this line with their own times` (the delivery that ends a refusal episode, when every held line went out; `site reachable again - delivered 1 held line stamped ${first}, it stands above this line with its own time` for a single line)
@@ -183,7 +183,7 @@ Log lines:
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] could not connect to ${SSID}: ${reason} - trying the next` (the reasons are listed under [ASSOC_WAIT](#assoc_wait))
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] connected: ${SSID} (signal mode - no upload probe target configured)`
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] returned to preferred network: ${SSID} (signal mode)`
-- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: signal mode (no probe target - networks chosen by signal), reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${m} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (the start summary with both addresses empty)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: signal mode (no probe target - networks chosen by signal), reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, site commands ${on|off (SITE_COMMANDS=no)|off (no SITE_URL)}, ${n} stored networks, ${m} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (the start summary with both addresses empty)
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] upload probe failed on ${SSID} - the probe target accepted nothing (site or endpoint down?), counting it as 0 kbps` (in place of the `measured` or `candidate` line when the target took no bytes, with curl and with the wget fallback; the decision counts the probe as 0)
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] measured ${kbps} kbps on ${SSID} - under the ${floor} kbps floor, a challenger must beat ${bar} kbps` (the evaluation's baseline when it is under the floor; the bar is the measurement times the gain, divided by 100)
 
@@ -227,6 +227,23 @@ The site has no WiFi widget, so posting the cell every six healthy ticks (about 
 REPORT_WIFI="no"
 ```
 
+### SITE_COMMANDS
+
+Default: `"yes"`
+
+Allowed: `yes` or `no`; any other word becomes `yes`
+
+Unit: mode word
+
+Whether the daemon takes commands from a page on the site: a scan on demand, a trial of a stored network (`switch`), a join with a password typed on the page, and a hold for a chosen time. With `yes` and a `SITE_URL`, the daemon makes the device key `/etc/awacs.key`, registers it with the site once per start (and again until the site takes it), keeps the `/run/awacs/cmd.ready` marker the site's relay looks for, and reads `/run/awacs/cmd` at the top of its loop. With `no`, none of that happens: no key is made or sent, the marker is absent so a relay never signals, and a command file left behind is ignored. Without `SITE_URL` the knob is `no` whatever the file says, since there is no page to take a command from. Everything the daemon does on its own (the measured choice, recovery, the story lines, the WiFi cell and the scan list) is untouched by this knob.
+
+It depends on `SITE_URL`, and on the site having a page that writes the channel described in [integration.md](integration.md). A site that only reads the daemon's reports sets `no`.
+
+Log lines:
+
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: ... site commands ${on|off (SITE_COMMANDS=no)|off (no SITE_URL)} ...` (the start summary names the channel state as applied)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] device key registered with the site - a password typed there can be opened here` (only with `yes`)
+
 ### SITE_TZ
 
 Default: `""` (empty: the device's own time zone)
@@ -243,7 +260,7 @@ Log lines:
 
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [${LEVEL}][awacs] ${text}` (the line as sent to the site; the same event is written locally as `${yyyy-mm-ddThh:mm:ss+hh:mm} [${LEVEL}] ${text}` in the device zone)
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] time zone ${SITE_TZ} is unknown on this device (${why}) - stamps fall back to UTC` (once at start; the reason is `no such zone` or `tzdata not installed`)
-- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: measured mode, floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night (night ${NIGHT_START}-${NIGHT_END}), switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${minutes} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${m} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (the `stamps in` part names this zone, or `the device zone` when the knob is empty)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: measured mode, floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night (night ${NIGHT_START}-${NIGHT_END}), switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${minutes} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, site commands ${on|off (SITE_COMMANDS=no)|off (no SITE_URL)}, ${n} stored networks, ${m} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (the `stamps in` part names this zone, or `the device zone` when the knob is empty)
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] clock set ${forward|back} ${delta} by time sync - the lines above carry the old time` (once per step: the device clock moved by more than 60 s between two passes against the uptime clock, as a board without a clock battery does at its first time sync; the stamps above it, in whatever zone, carry the time before the step; the delta reads `7 h 0 min` or `2 min`)
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] reboot clock armed - the device reboots after ${HH:MM} unless the internet returns or the fault reads external` (the hour is in this zone)
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] repeated ${n} more times during the outage (last at ${HH:MM}): ${line}` (the hour is in this zone)
@@ -376,7 +393,7 @@ The lines that mark this mode:
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] could not return to ${SSID}: ${reason}`
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] connected: ${SSID} (signal mode - no upload probe target configured)` (the measured form reads `switched to ${SSID} (upload ${kbps} kbps)`)
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] returned to preferred network: ${SSID} (signal mode)` (the measured form ends with `(upload ${kbps} kbps)`)
-- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: signal mode (no probe target - networks chosen by signal), reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${m} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (the start summary in this mode)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: signal mode (no probe target - networks chosen by signal), reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, site commands ${on|off (SITE_COMMANDS=no)|off (no SITE_URL)}, ${n} stored networks, ${m} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (the start summary in this mode)
 - `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] connected to EMERGENCY network: ${name} (signal mode) - stored networks stay armed, home again when one returns` and `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] connected to OPEN network: ${name} (signal mode) - stored networks stay armed, home again when one returns` (the measured form carries `(upload ${kbps} kbps)` instead)
 
 `awacs.sh speed` prints a failed upload row that begins `no probe target (signal mode)`.
