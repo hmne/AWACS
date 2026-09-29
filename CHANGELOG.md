@@ -2,6 +2,39 @@
 
 All notable changes to AWACS. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+Fuller reporting and the site's WiFi commands. No knob changed its meaning and the defaults are the same.
+
+### Added
+
+- Every line the daemon sends now carries an RFC 3339 stamp and the `[LEVEL][awacs]` tag a dashboard can group by; `DEBUG` defaults to `no`.
+- `LOG_LANG` and `SITE_LANG` choose the language of the story lines, `en` (the default) or `ar`, for the local log and for the site independently; the wizard takes `--log-lang` and `--site-lang`, and the `reporting:` start line ends `| lang: local en, site en`. DEBUG lines stay English.
+- The whole decision story of an evaluation and a recovery: what the scan heard (names and signal, the known ones by name, the stored ones not heard) and what was measured on the current network.
+- Every candidate tried and why one was refused (`never associated`, `associated but got no address`, `refused - wrong password?`, NetworkManager's own reason), the switch with the numbers it won by, the way back when a switch failed, and the bench of a too-slow preferred network with its duration.
+- Steps that repeat inside one outage are said once and counted; the counts follow `internet restored` with the time of the last repeat.
+- At start: the effective settings on one line (`running with: ...`), the backend and whether this is the first start of the boot or a restart, refused or fallen settings, a soft-blocked radio, a partly active stealth mode, a temporary network left by the previous run, and an outage that already exists at start.
+- A reboot the daemon orders is remembered on the card with the outage story: the next start says it was the daemon's reboot and restores the story in order; a reboot command that did not work is said.
+- The reboot clock armed and cleared, the fault verdict with its evidence, the external verdict with its tell, every emergency or open network refused and why, every recovery rung that did not complete, NetworkManager not answering `nmcli`, the interface vanishing mid-run.
+- The plumbing's own faults: the outage story trimmed at `SPOOL_CAP` with the number of lines dropped, the site refusing a line while the internet is up and the held lines delivered later with their own stamps, the WiFi cell refused by the site, and the local log becoming unwritable.
+- The daemon's own state: an unknown `SITE_TZ`, a clock step after time sync, a second daemon losing the lock, an unexpected exit and a graceful stop.
+- A WiFi scan list for the dashboard: `tmp/wifi_scan.tmp` (the networks heard, signal, measured upload where known), published at most once a minute after a real scan; the shipped receivers accept it.
+- Site commands from a dashboard's WiFi menu: a scan on demand (`scan`), a trial of a stored network (`switch`) and a trial of a new network with a password typed on the site (`join`).
+- The channel: the site's relay on the device writes one line to `/run/awacs/cmd` and sends `SIGUSR1`. The daemon's sleep is interruptible; a command is read at the top of the main loop only, expires after 60 s of uptime and is ignored when its epoch was already seen. `/run/awacs/cmd.ready` tells the relay the daemon traps the signal.
+- The answer goes back as data in `tmp/wifi_state.tmp` (`taken`, `scanning`, `done`, `trying`, `measuring`, `switched`, `joined`, `returned`, or `failed` with a reason) and is re-sent until the site takes it.
+- The trial: 15 s on the chosen network, one probe, and the same bar every challenger meets (`SWITCH_GAIN_PCT` of the network left); a slower trial returns to the origin with both numbers. Every step is a site line in the daemon's voice; network names appear, passwords, keys and ciphertext never.
+- A device key `/etc/awacs.key` (root 0600, `openssl rand -hex 32`), registered with the site as `file=wifi_key` at start, at the third healthy tick and then once a healthy minute until the site takes it; a different key needs a proof made with the previous one. A password typed on the site travels as `<iv_hex>.<ct_base64>.<mac_hex>` (AES-256-CBC under derived keys, HMAC checked first) and is opened with `openssl` alone.
+- Networks joined from the site are kept in `/etc/awacs.networks` (root 0600) once their password proved itself, re-added at every start and after the rungs that restart the supplicant or NetworkManager; an unfinished join is reaped at the next start through `/run/awacs/join_id`. On NetworkManager two keyfile classes in `/run`: the trial `awacs-join-<epoch>-<pid>` and the persistent `awacs-joined-<hexssid>`; the deletion guard accepts these two beside the crutch and safety classes, and nothing else.
+- The shipped receivers accept `tmp/wifi_state.tmp` and the `wifi_key` registration (stored as `private/wifi.key`, mode 0600, denied to browsers under Apache).
+
+### Changed
+
+- `internet lost on NAME - router still answers, engaging` names the network and says whether the router answers; `internet restored: NAME - down 4m 20s, 3 recovery runs` says how long and how many runs.
+- The day and night profile lines say until when, the floor, the gain and the cooldown.
+- The graceful stop drains at most six held lines or twenty seconds; the rest waits for the next start.
+- The scan list's rows carry two more tab-separated columns: `known` (`1` for a stored network, `0` otherwise) and the SSID as lowercase hex, the key a site command names a network by. A reader that splits on tabs and pads short rows is unaffected.
+- The main loop's sleep is `sleep TICK` in the background, awaited, so a `SIGUSR1` ends it; the trap is installed before the backend is detected. `nmcli device wifi rescan` is used for a scan asked from the site on NetworkManager.
+
 ## 1.0.0 - 2026-09-19
 
 First public release.

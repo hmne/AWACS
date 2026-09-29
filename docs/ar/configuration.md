@@ -6,18 +6,22 @@
 
 ## التحميل
 
-يقرأ الحارس الملف فقط حين يعمل بصلاحيات `root`؛ أما `awacs.sh check` و`awacs.sh help` فيعملان بلا `root` ولذلك بالقيم الافتراضية المضمّنة؛ وكل أمر آخر من أوامر الطرفية يعمل بـ `root` ويقرأ الملف كما يقرؤه الحارس تماماً. متغير البيئة `AWACS_CONF` يشير إلى ملف آخر بدل `/etc/awacs.conf`؛ والملف الغائب يُتجاوز بصمت. قبل القراءة يتحقق الحارس من أمرين، لأن الملف يُنفَّذ بصلاحيات `root` ويحمل كلمات سر نقاط الاتصال: يجب أن يكون ملك `root`، و`0600` هي الصلاحية الموثّقة؛ ولا يرفض الفحص إلا بت قراءة أو كتابة للمجموعة أو الآخرين (بتات التنفيذ لا يُنظر فيها)، فتمر `0600` و`0400` و`0700`، وتُرفض `0640` و`0644` و`0660`. وإلا يطبع الحارس أحد هذين السطرين على `stderr`، لا في السجل، ويعمل بالقيم الافتراضية كلها:
+يقرأ الحارس الملف فقط حين يعمل بصلاحيات `root`؛ أما `awacs.sh check` و`awacs.sh help` فيعملان بلا `root` ولذلك بالقيم الافتراضية المضمّنة؛ وكل أمر آخر من أوامر الطرفية يعمل بـ `root` ويقرأ الملف كما يقرؤه الحارس تماماً. متغير البيئة `AWACS_CONF` يشير إلى ملف آخر بدل `/etc/awacs.conf`؛ والملف الغائب يُتجاوز، ويُقال ذلك مرة عند البدء بالسطر المذكور أدناه. قبل القراءة يتحقق الحارس من أمرين، لأن الملف يُنفَّذ بصلاحيات `root` ويحمل كلمات سر نقاط الاتصال: يجب أن يكون ملك `root`، و`0600` هي الصلاحية الموثّقة؛ ولا يرفض الفحص إلا بت قراءة أو كتابة للمجموعة أو الآخرين (بتات التنفيذ لا يُنظر فيها)، فتمر `0600` و`0400` و`0700`، وتُرفض `0640` و`0644` و`0660`. وإلا يطبع الحارس أحد هذين السطرين على `stderr` فوراً، ويعمل بالقيم الافتراضية كلها:
 
 - `awacs: IGNORING ${AWACS_CONF} (group/world can access it — chmod 600 it)`
 - `awacs: IGNORING ${AWACS_CONF} (not owned by root — chown root: it)`
 
-على الطرفية يظهر السطر مباشرة، وتحت `systemd` يصل إلى journal؛ أما سطر التشغيل الموثّق في `rc.local` فيُهمل المخرجات، فلا يُرى التحذير هناك؛ فتحقق من المالك والصلاحية يدوياً بعد تعديل الملف من حساب آخر.
+على الطرفية يظهر السطر مباشرة، وتحت `systemd` يصل إلى journal؛ أما سطر التشغيل الموثّق في `rc.local` فيُهمل المخرجات، فلا يُرى التحذير هناك. ولأن ذلك الخرج لا يصل إلى أحد تحت المشغّل، يعيد الحارس قول الحكم عند البدء بسطر قصة `WARN` واحد، في السجل المحلي دائماً، وعلى الموقع حين يبقى `SITE_URL` مضبوطاً (الملف المرفوض أو الغائب يتركه فارغاً ما لم يأتِ من البيئة):
+
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] settings file ${AWACS_CONF} not found - running on built-in defaults (no site, no emergency networks)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] settings file ${AWACS_CONF} ignored: mode ${mode}, chmod 600 it - running on built-in defaults (no site, no emergency networks)` (`${mode}` الصلاحية بالنظام الثماني كما قرأها `stat`، مثل `644`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] settings file ${AWACS_CONF} ignored: not owned by root, chown root: it - running on built-in defaults (no site, no emergency networks)`
 
 يُنفَّذ الملف بـ `bash` بأمر `source`، فلا يحوي إلا تعيينات بسيطة: `KEY=value` و`KEY="value"` و`SAFETY_NET["Name"]="password"`. لا `readonly` ولا `declare`، لأن خطوة الفحص يجب أن تستطيع إعادة كتابة القيمة؛ ولا `unset`؛ ولا أوامر ولا `$(...)`، فأي شيفرة أخرى في الملف تعمل بصلاحيات `root` ولا يمنعها شيء. وللإبقاء على الافتراضي اترك السطر معلّقاً بدل حذف المفتاح. بعد الفحص تُختم كل المفاتيح للقراءة فقط؛ ولا يغيّرها شيء أثناء العمل سوى نسخ النهار والليل الموصوفة في الوضع الليلي. يُقرأ الملف مرة واحدة عند كل بدء، للحارس ولكل أمر من أوامر الطرفية يعمل بـ `root` على السواء؛ فالتعديل لا يسري على حارس يعمل حتى يُعاد تشغيله.
 
 ## الفحص
 
-تُفحص كل قيمة مرة واحدة عند البدء؛ والقيمة الخاطئة تسقط إلى الافتراضي دون إيقاف الحارس ودون سطر في السجل، إلا في حالة التخفيض المذكورة أدناه.
+تُفحص كل قيمة مرة واحدة عند البدء؛ والقيمة الخاطئة تسقط إلى الافتراضي دون إيقاف الحارس، ويُجمع اسمها، لا قيمتها، في سطر واحد يقوله الحارس مرة عند البدء (أدناه)؛ وللتخفيض المذكور أدناه سطره الخاص.
 
 **المفاتيح الرقمية**، وهي سبعة عشر: `TICK` و`NET_FAIL_TICKS` و`ASSOC_WAIT` و`PREF_CHECK` و`REBOOT_AFTER_MIN` و`PROBE_KB` و`MIN_UP_KBPS` و`UP_STRIKES` و`SWITCH_GAIN_PCT` و`DANCE_COOLDOWN` و`STREAM_MIN_KBPS` و`NIGHT_MIN_UP_KBPS` و`NIGHT_GAIN_PCT` و`NIGHT_DANCE_COOLDOWN` و`LOG_CAP` و`SCAN_TTL` و`SPOOL_CAP`. يجب أن تطابق القيمة `^0*[1-9][0-9]{0,6}$`: عدد صحيح من 1 إلى 9999999. الأصفار البادئة مقبولة وتُطبَّع (`08` تصبح 8 وتُخزَّن عشرياً)؛ والصفر أو القيمة الفارغة أو غير المضبوطة أو العدد السالب أو الكسر أو النص أو العدد الذي يزيد على سبعة أرقام معنوية يعيد الافتراضي. الصفر مرفوض لأنه بلا معنى لكل منها (دورة صفرية تدوّر الحلقة بلا توقف، وحد صفري للمخزون المؤقت يكسر قاعدة السطر الأول)، والأعداد الطويلة مرفوضة لأنها قد تلتف إلى أعداد سالبة أو انتظارات لا تنتهي.
 
@@ -33,9 +37,13 @@
 
 **`SAFETY_NET`** لا يُفحص عند التحميل؛ بل يُفحص كل مدخل حين يُجرَّب، بالقواعد المذكورة في [شبكات الطوارئ](#شبكات-الطوارئ).
 
-**التخفيض:** `LOG_TARGET` المضبوط على `both` أو `remote` بلا `SITE_URL` (غير مضبوط، أو مضبوط بشكل فشل في الفحص فأُفرغ) يُخفَّض إلى `local` وتُرفع علامة؛ ويقولها الحارس مرة واحدة في سجل البدء، وهي الحالة الوحيدة التي يُعلن فيها سقوط قيمة:
+**التخفيض:** `LOG_TARGET` المضبوط على `both` أو `remote` بلا `SITE_URL` (غير مضبوط، أو مضبوط بشكل فشل في الفحص فأُفرغ) يُخفَّض إلى `local` وتُرفع علامة؛ ويقولها الحارس مرة واحدة في سجل البدء:
 
-- `[WARN][${dd/mm HH:MM:SS}] LOG_TARGET asked for the site but SITE_URL is empty - running local-only`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] LOG_TARGET asked for the site but SITE_URL is empty - running local-only`
+
+**المفاتيح الساقطة:** كل مفتاح لم يجتز فحصه أعلاه يُذكر اسمه في سطر قصة واحد بعد سطر `reporting:`، مرة عند البدء، وفقط حين سقط مفتاح واحد على الأقل؛ الأسماء وعددها، لا القيم. `SITE_URL` و`PROBE_URL` و`SITE_TZ` الفارغة اختيار لا سقوط، ولا يُحسب منها إلا ما كُتب بشكل خاطئ:
+
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] settings file ${AWACS_CONF} applied, but ${n} values failed validation and use their defaults: ${names}` (الأسماء مفصولة بفاصلة، مثل `TICK, NIGHT_START, SITE_TZ`)
 
 ## تطبيق التغييرات
 
@@ -49,34 +57,45 @@ sudo nano /etc/awacs.conf
 
 <div dir="rtl">
 
-يقرأ الحارس الملف عند البدء فقط. بعد التعديل أعد تشغيله (انظر [install.md](install.md#الإيقاف-وإعادة-التشغيل)). يفتتح كل بدء بسطرين: الأول سطر قصة، `AWACS ${VERSION} starting on ${IF} (device ${DEVICE_ID})`، يتبع `LOG_TARGET` كأي سطر قصة، فمع `remote` يذهب إلى الموقع وحده؛ والثاني سطر التأكيد: يُكتب مباشرة في الملف المحلي، بالإنجليزية أياً كانت الإعدادات، ولا يُرسل إلى الموقع أبداً، ويعرض ما حُمِّل للتقارير كما فهمه الحارس:
+يقرأ الحارس الملف عند البدء فقط. بعد التعديل أعد تشغيله (انظر [install.md](install.md#الإيقاف-وإعادة-التشغيل)). يفتتح كل بدء بثلاثة أسطر: الأول سطر قصة، `AWACS ${VERSION} starting on ${IF} (device ${DEVICE_ID}) - ${wpa|NetworkManager} backend, ${first start of this boot, up ${uptime}|restart ${n} of this boot}`، يتبع `LOG_TARGET` كأي سطر قصة، فمع `remote` يذهب إلى الموقع وحده؛ والثاني سطر التأكيد: يُكتب مباشرة في الملف المحلي، بالإنجليزية أياً كانت الإعدادات، ولا يُرسل إلى الموقع أبداً، ويعرض ما حُمِّل للتقارير كما فهمه الحارس:
 
-- `[INFO][${dd/mm HH:MM:SS}] reporting: ${LOG_TARGET} -> ${SITE_URL} | probe: ${probe target} | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] reporting: ${LOG_TARGET} -> ${SITE_URL} | probe: ${probe target} | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}`
 
-الجزء ` -> ${SITE_URL}` يظهر فقط حين يُضبط `SITE_URL`، ويعرض القيمة كما كُتبت في الملف. جزء `probe:` هو عنوان القياس الفعلي حين يوجد، والكلمات `none - signal mode` حين لا يوجد. بالافتراضيات كلها يقرأ السطر `[INFO][${dd/mm HH:MM:SS}] reporting: local | probe: none - signal mode | wifi cell: auto | lang: local en, site en`. هذا السطر هو تأكيدك بعد كل تعديل: لأن `SITE_URL` المكتوب خطأً يُفرَغ بصمت، يظهر الخطأ هنا في صورة `reporting: local`، ومعه `probe: none - signal mode` ما لم يُضبط `PROBE_URL`.
+الجزء ` -> ${SITE_URL}` يظهر فقط حين يُضبط `SITE_URL`، ويعرض القيمة كما كُتبت في الملف. جزء `probe:` هو عنوان القياس الفعلي حين يوجد، والكلمات `none - signal mode` حين لا يوجد. بالافتراضيات كلها يقرأ السطر `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] reporting: local | probe: none - signal mode | wifi cell: auto | lang: local en, site en`. هذا السطر هو تأكيدك بعد كل تعديل: `SITE_URL` المكتوب خطأً يُفرِغه فحص الشكل، فيظهر الخطأ هنا في صورة `reporting: local`، ومعه `probe: none - signal mode` ما لم يُضبط `PROBE_URL`، ويسمّيه سطر المفاتيح الساقطة `settings file ... applied, but N values failed validation` الذي يليه.
 
-في أسطر السجل المقتبسة أدناه، `${...}` يشير إلى قيمة يملؤها الحارس. السطر في الملف المحلي بالشكل `[${LEVEL}][${dd/mm HH:MM:SS}] ${text}`، والسطر المرسل إلى الموقع بالشكل `[${LEVEL}] AWACS: ${text}, ${dd/mm/yyyy hh:mm:ss AM|PM}.`. أسطر القصة تُكتب محلياً بلغة `LOG_LANG` وتُرسل إلى الموقع بلغة `SITE_LANG`؛ والمقتبس هنا نصها الإنجليزي.
+والثالث سطر قصة يختم البداية بعد أحكام ملف الضبط: الإعدادات كما تعمل فعلاً بعد الفحص، أرقام وكلمات وأعداد، بلا عنوان ولا اسم من `SAFETY_NET`. `measured mode` حين يوجد هدف قياس (`SITE_URL` أو `PROBE_URL`)، و`signal mode` بدونه؛ وجزء الحد يقرأ `floor ${MIN_UP_KBPS} kbps (night profile off)` حين لا يكون `NIGHT_MODE` هو `yes`؛ و`one evaluation per` هو `DANCE_COOLDOWN` بالدقائق مقرَّباً إلى الأعلى؛ وعدد الشبكات المخزنة يُقرأ من الطبقة الأساسية لحظة البدء (`0` مع ضبط سليم يعني `wpa_cli` صامتاً أو `nmcli` غائباً)؛ و`emergency` عدد مدخلات `SAFETY_NET` بلا أسمائها؛ و`stamps in` هو `SITE_TZ` أو `the device zone`:
+
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: measured mode, floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night (night ${NIGHT_START}-${NIGHT_END}), switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${minutes} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${n} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: signal mode (no probe target - networks chosen by signal), reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${n} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (بلا هدف قياس؛ ويبقى في الملف المحلي وحده لأن لا موقع)
+
+في أسطر السجل المقتبسة أدناه، `${...}` يشير إلى قيمة يملؤها الحارس. السطر في الملف المحلي بالشكل `${yyyy-mm-ddThh:mm:ss+hh:mm} [${LEVEL}] ${text}`، والسطر المرسل إلى الموقع بالشكل `${yyyy-mm-ddThh:mm:ss+hh:mm} [${LEVEL}][awacs] ${text}`. أسطر القصة تُكتب محلياً بلغة `LOG_LANG` وتُرسل إلى الموقع بلغة `SITE_LANG`؛ والمقتبس هنا نصها الإنجليزي.
 
 ## التقارير
 
-أين تذهب قصة الحارس، وكيف يقيس سرعة الرفع، وبأي لغة ومنطقة زمنية يقرؤها الموقع. كل طلب يرسله الحارس إلى الموقع يذهب إلى عنوان واحد يُبنى من ثلاثة أجزاء: `${SITE_URL}/${DEVICE_ID}/${SITE_API}`. يستقبل هذا العنوان أربعة أنواع من الطلبات، كلها `POST`: أسطر القصة (حقلان، `file=log/log.txt` و`data=` يتبعه السطر، بحد 4 ثوانٍ)، وخانة الواي فاي (`file=tmp/wifi.tmp` و`data=` يتبعه `kbps,visible,total,band,SSID`، بحد 4 ثوانٍ)، وقياس الرفع (جسم خام بحجم `PROBE_KB` كيلوبايت بحد 15 ثانية؛ لا يُفحص الرد بل السرعة فقط)، والدرجة الأخيرة من فحص الإنترنت (طلب يحمل `probe=1` يجب أن يُجاب بـ HTTP 400 ولا يُقبل غيره، بحد 3 ثوانٍ في الصيغة السريعة من الفحص و8 ثوانٍ في صيغته الصبورة؛ وبهذا تُرفض صفحات الاعتراض التي ترد بـ 200 أو 302). المستقبِلان المرفقان `server/receiver.php` (PHP 7.4 فأحدث، بلا اعتماديات) و`server/receiver.py` (Python 3، المكتبة القياسية فقط) يجيبان هذا العقد لأي هوية جهاز؛ والتفاصيل في [integration.md](integration.md). أوامر الطرفية (`status` و`networks` و`evaluate` و`scan` و`speed` و`check`) لا ترسل أسطر قصة ولا خانة واي فاي أبداً؛ لكن `status` و`check` يجريان فحص الإنترنت، بدرجته الأخيرة حين يعطيها `SITE_URL` محمّل، و`speed` يرفع جسم قياس واحداً إلى هدف القياس. ولا يستعمل `status` و`check` إلا الصيغة السريعة من الفحص.
+أين تذهب قصة الحارس، وكيف يقيس سرعة الرفع، وبأي لغة ومنطقة زمنية يقرؤها الموقع. كل طلب يرسله الحارس إلى الموقع يذهب إلى عنوان واحد يُبنى من ثلاثة أجزاء: `${SITE_URL}/${DEVICE_ID}/${SITE_API}`. يستقبل هذا العنوان خمسة أنواع من الطلبات، كلها `POST`: أسطر القصة (حقلان، `file=log/log.txt` و`data=` يتبعه السطر، بحد 4 ثوانٍ)، وخانة الواي فاي (`file=tmp/wifi.tmp` و`data=` يتبعه `kbps,visible,total,band,SSID`، بحد 4 ثوانٍ)، وقائمة مسح الواي فاي (`file=tmp/wifi_scan.tmp` و`data=` يتبعه نص القائمة، بحد 4 ثوانٍ)، وقياس الرفع (جسم خام بحجم `PROBE_KB` كيلوبايت بحد 15 ثانية؛ لا يُفحص الرد بل السرعة فقط)، والدرجة الأخيرة من فحص الإنترنت (طلب يحمل `probe=1` يجب أن يُجاب بـ HTTP 400 ولا يُقبل غيره، بحد 3 ثوانٍ في الصيغة السريعة من الفحص و8 ثوانٍ في صيغته الصبورة؛ وبهذا تُرفض صفحات الاعتراض التي ترد بـ 200 أو 302). المستقبِلان المرفقان `server/receiver.php` (PHP 7.4 فأحدث، بلا اعتماديات) و`server/receiver.py` (Python 3، المكتبة القياسية فقط) يجيبان هذا العقد لأي هوية جهاز؛ والتفاصيل في [integration.md](integration.md). أوامر الطرفية (`status` و`networks` و`evaluate` و`scan` و`speed` و`check`) لا ترسل أسطر قصة ولا خانة واي فاي ولا قائمة مسح أبداً؛ لكن `status` و`check` يجريان فحص الإنترنت، بدرجته الأخيرة حين يعطيها `SITE_URL` محمّل، و`speed` يرفع جسم قياس واحداً إلى هدف القياس. ولا يستعمل `status` و`check` إلا الصيغة السريعة من الفحص.
 
 ### SITE_URL
 
 الافتراضي: `""` (فارغ)
 
-المسموح: `http://host[:port]` أو `https://host[:port]`، يتبعه مسار اختياري؛ بلا مسافات، وبلا شرطة مائلة داخل المضيف. القيمة بشكل آخر تُقرأ فارغة بصمت، والفارغ يعني عملاً محلياً فقط.
+المسموح: `http://host[:port]` أو `https://host[:port]`، يتبعه مسار اختياري؛ بلا مسافات، وبلا شرطة مائلة داخل المضيف. القيمة بشكل آخر تُقرأ فارغة ويُسمّى المفتاح في سطر السقوط عند البدء، والفارغ يعني عملاً محلياً فقط.
 
 الوحدة: عنوان URL
 
-العنوان الأساسي لموقع التقارير. الفارغ يعني عملاً محلياً فقط: لا حركة نحو الموقع إطلاقاً، والسجل المحلي هو المخرج الوحيد، والدرجة الأخيرة من فحص الإنترنت غير موجودة؛ ومع `PROBE_URL` فارغ أيضاً يعمل الحارس في [وضع الإشارة](#وضع-الإشارة) (لا قياس للرفع، وتُختار الشبكات بقوة الإشارة). حين يُضبط يصبح أصل كل عنوان موقع، ويستقبل أسطر القصة وخانة الواي فاي وجسم القياس (ما لم يشر `PROBE_URL` إلى مكان آخر) والدرجة الأخيرة من فحص الإنترنت، وهي طلب `POST` يحمل `probe=1` يجب أن تجيبه نقطة الاستقبال بـ HTTP 400. القيمة بشكل خاطئ تُفرَغ بصمت، فيعرض سطر `reporting:` عند البدء `local`. ضبط `SITE_URL` مع بقاء `LOG_TARGET` على `local` يفعّل قياس الرفع ودرجة فحص الإنترنت، لكنه لا يرسل أسطر قصة، ولا خانة واي فاي مع `REPORT_WIFI=auto`.
+العنوان الأساسي لموقع التقارير. الفارغ يعني عملاً محلياً فقط: لا حركة نحو الموقع إطلاقاً، والسجل المحلي هو المخرج الوحيد، والدرجة الأخيرة من فحص الإنترنت غير موجودة؛ ومع `PROBE_URL` فارغ أيضاً يعمل الحارس في [وضع الإشارة](#وضع-الإشارة) (لا قياس للرفع، وتُختار الشبكات بقوة الإشارة). حين يُضبط يصبح أصل كل عنوان موقع، ويستقبل أسطر القصة وخانة الواي فاي وجسم القياس (ما لم يشر `PROBE_URL` إلى مكان آخر) والدرجة الأخيرة من فحص الإنترنت، وهي طلب `POST` يحمل `probe=1` يجب أن تجيبه نقطة الاستقبال بـ HTTP 400. القيمة بشكل خاطئ تُفرَغ ويُذكر اسم المفتاح في سطر `settings file ... applied, but N values failed validation`، فيعرض سطر `reporting:` عند البدء `local`. ضبط `SITE_URL` مع بقاء `LOG_TARGET` على `local` يفعّل قياس الرفع ودرجة فحص الإنترنت، لكنه لا يرسل أسطر قصة، ولا خانة واي فاي مع `REPORT_WIFI=auto`.
 
 `both` و`remote` في `LOG_TARGET` لا يعملان إلا به، وإلا خُفِّض `LOG_TARGET` إلى `local` وسُجِّل تحذير مرة واحدة عند البدء. `PROBE_URL` حين يُضبط يحل محل `${SITE_URL}/${DEVICE_ID}/${SITE_API}` هدفاً للقياس فقط. `REPORT_WIFI=yes` ينشر الخانة ما دام `SITE_URL` مضبوطاً ولو كان `LOG_TARGET` هو `local`؛ أما `auto` فيحتاج `both` أو `remote` أيضاً. `SITE_API` يُلحق بعد هوية الجهاز، و`DEVICE_ID` هو المجلد في المسار. المخزون المؤقت (`SPOOL_CAP`) لا يمتلئ إلا حين يُضبط `SITE_URL` ويكون `LOG_TARGET` هو `both` أو `remote`.
 
 أسطر السجل:
 
-- `[INFO][${dd/mm HH:MM:SS}] reporting: ${LOG_TARGET} -> ${SITE_URL} | probe: ${probe target} | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}`
-- `[WARN][${dd/mm HH:MM:SS}] LOG_TARGET asked for the site but SITE_URL is empty - running local-only`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] reporting: ${LOG_TARGET} -> ${SITE_URL} | probe: ${probe target} | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] LOG_TARGET asked for the site but SITE_URL is empty - running local-only`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: measured mode, floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night (night ${NIGHT_START}-${NIGHT_END}), switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${minutes} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${n} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (يختم البداية؛ انظر تطبيق التغييرات)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] wifi cell asked for (REPORT_WIFI=yes) but SITE_URL is empty - nothing to publish to` (`REPORT_WIFI=yes` بلا موقع، مرة عند البدء)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] site did not take the log line (${http ${code}|no reply in 4 s}) - holding lines, delivery retried about every ${m} min` (رد الموقع على سطر قصة خارج 2xx و3xx، أو لم يرد خلال 4 ثوانٍ، بينما الإنترنت يعمل؛ مرة في كل نوبة رفض؛ يُحتجز السطر المرفوض في المخزون ويُلحق التحذير خلفه؛ و`${m}` هو `TICK` مضروباً في 30 مقسوماً على 60)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] delivered ${n} held lines stamped ${HH:MM} to ${HH:MM} - they stand above this line with their own times` (بعد كل تفريغ سلّم أسطراً محتجزة، إلا تفريغ بدء لم يُحتجز فيه سوى أسطر البدء نفسها؛ وللسطر الواحد `delivered 1 held line stamped ${HH:MM} - it stands above this line with its own time`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] site reachable again - delivered ${n} held lines stamped ${HH:MM} to ${HH:MM}, they stand above this line with their own times` (التفريغ الذي يسلّم كل المحتجز بعد نوبة رفض ويختمها)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] upload probe failed on ${SSID} - the probe target accepted nothing (site or endpoint down?), counting it as 0 kbps` (في لحظة قرار: الموقع أو نقطة الاستقبال لا يقبلان جسم القياس بينما الإنترنت يعمل)
 
 متى تغيّره: اضبطه حالما يوجد مستقبِل أو موقع كامل لهذا الجهاز؛ واتركه فارغاً لجهاز يُراد له سجل محلي فقط ولا يحتاج قياس رفع.
 
@@ -94,17 +113,18 @@ SITE_URL="https://example.org"
 
 الافتراضي: `"receiver.php"`
 
-المسموح: من 1 إلى 64 حرفاً؛ الحرف الأول حرف أو رقم أو `_`، والباقي حروف وأرقام و`_` و`.` و`/` و`-`؛ وبلا `..` (لا خروج من مجلد الجهاز). ما عدا ذلك، ومنه القيمة الفارغة، يصبح `receiver.php` بصمت.
+المسموح: من 1 إلى 64 حرفاً؛ الحرف الأول حرف أو رقم أو `_`، والباقي حروف وأرقام و`_` و`.` و`/` و`-`؛ وبلا `..` (لا خروج من مجلد الجهاز). ما عدا ذلك، ومنه القيمة الفارغة، يصبح `receiver.php` ويُسمّى المفتاح في سطر المفاتيح الساقطة عند البدء.
 
 الوحدة: اسم ملف، ويجوز أن يحوي مجلدات فرعية
 
-اسم ملف نقطة الاستقبال الذي يُلحق بعد مجلد الجهاز: `${SITE_URL}/${DEVICE_ID}/${SITE_API}`. هذا هو العنوان الوحيد الذي يخاطبه الحارس على الموقع، ويستقبل الأنواع الأربعة من الطلبات المذكورة في مقدمة القسم: أسطر القصة (الحقلان `file=log/log.txt` و`data=` يتبعه السطر)، وخانة الواي فاي (`file=tmp/wifi.tmp` و`data=` يتبعه `kbps,visible,total,band,SSID`)، وقياس الرفع (جسم `POST` خام بحجم `PROBE_KB` كيلوبايت، ما دام `PROBE_URL` فارغاً فقط)، وطلب فحص الإنترنت (`POST` يحمل `probe=1` ويُجاب بـ HTTP 400). المستقبِلان المرفقان في `server/` (أحدهما بـ PHP 7.4 فأحدث بلا اعتماديات، والآخر بـ Python 3 بالمكتبة القياسية فقط) يجيبان هذا العقد لأي هوية جهاز؛ والعقد نفسه موصوف في [integration.md](integration.md). لا أثر له ما دام `SITE_URL` فارغاً. يجوز أن يحوي مجلدات فرعية.
+اسم ملف نقطة الاستقبال الذي يُلحق بعد مجلد الجهاز: `${SITE_URL}/${DEVICE_ID}/${SITE_API}`. هذا هو العنوان الوحيد الذي يخاطبه الحارس على الموقع، ويستقبل الأنواع الخمسة من الطلبات المذكورة في مقدمة القسم: أسطر القصة (الحقلان `file=log/log.txt` و`data=` يتبعه السطر)، وخانة الواي فاي (`file=tmp/wifi.tmp` و`data=` يتبعه `kbps,visible,total,band,SSID`)، وقائمة مسح الواي فاي (`file=tmp/wifi_scan.tmp` و`data=` يتبعه نص القائمة)، وقياس الرفع (جسم `POST` خام بحجم `PROBE_KB` كيلوبايت، ما دام `PROBE_URL` فارغاً فقط)، وطلب فحص الإنترنت (`POST` يحمل `probe=1` ويُجاب بـ HTTP 400). المستقبِلان المرفقان في `server/` (أحدهما بـ PHP 7.4 فأحدث بلا اعتماديات، والآخر بـ Python 3 بالمكتبة القياسية فقط) يجيبان هذا العقد لأي هوية جهاز؛ والعقد نفسه موصوف في [integration.md](integration.md). لا أثر له ما دام `SITE_URL` فارغاً. يجوز أن يحوي مجلدات فرعية.
 
 لا معنى له بلا `SITE_URL`. `DEVICE_ID` هو المجلد الذي يسبقه. `PROBE_URL` يتجاوزه للقياس فقط؛ أما أسطر القصة وخانة الواي فاي وفحص الإنترنت فتستعمله دائماً.
 
 أسطر السجل:
 
-- `[INFO][${dd/mm HH:MM:SS}] reporting: ${LOG_TARGET} -> ${SITE_URL} | probe: ${SITE_URL}/${DEVICE_ID}/${SITE_API} | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}` (تظهر نقطة الاستقبال في جزء `probe:` فقط حين يكون `PROBE_URL` فارغاً)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] reporting: ${LOG_TARGET} -> ${SITE_URL} | probe: ${SITE_URL}/${DEVICE_ID}/${SITE_API} | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}` (تظهر نقطة الاستقبال في جزء `probe:` فقط حين يكون `PROBE_URL` فارغاً)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] site did not take the log line (${http ${code}|no reply in 4 s}) - holding lines, delivery retried about every ${m} min` (رد نقطة الاستقبال على سطر قصة خارج 2xx و3xx، أو لا رد خلال 4 ثوانٍ، مرة في كل نوبة؛ وتُختم النوبة بـ `site reachable again - delivered ${n} held lines stamped ${HH:MM} to ${HH:MM}, they stand above this line with their own times`)
 
 متى تغيّره: حين لا تُسمّى نقطة استقبال موقعك `receiver.php`: اسم نقطة الاستقبال الخاصة بالموقع الكامل، أو مستقبِل موضوع تحت مجلد فرعي.
 
@@ -126,14 +146,19 @@ SITE_API="api/receiver.php"
 
 الوحدة: كلمة وضع
 
-أين تذهب أسطر القصة. `local`: السجل المحلي فقط. `both`: السجل المحلي والموقع. `remote`: الموقع فقط، إلا أن أسطر `WARN` و`ERROR` من أسطر القصة تُكتب في الملف المحلي أيضاً. الأسطر التي ليست أسطر قصة تُكتب محلياً دائماً أياً كانت قيمته: أسطر `DEBUG` التشخيصية، وسطر `reporting:` عند البدء، وتحذير التخفيض، وسطر إعادة التشغيل، وتحذيرا المسح من أوامر الطرفية، وثلاثة أسطر خطأ داخلية. في `both` و`remote` يُحفظ السطر الذي لا يمكن إرساله (الجهاز بلا إنترنت، أو فشل الإرسال) في ملف المخزون المؤقت ويُسلَّم بترتيبه حين يعود الإنترنت؛ ويتوقف التسليم عند أول إرسال فاشل وينتظر الباقي المحاولة التالية. يحفظ المخزون `SPOOL_CAP` سطراً، والسطر الأول محفوظ دائماً. هذا المفتاح يتحكم أيضاً في خانة الواي فاي حين يكون `REPORT_WIFI` هو `auto`.
+أين تذهب أسطر القصة. `local`: السجل المحلي فقط. `both`: السجل المحلي والموقع. `remote`: الموقع فقط، إلا أن أسطر `WARN` و`ERROR` من أسطر القصة تُكتب في الملف المحلي أيضاً. الأسطر التي ليست أسطر قصة تُكتب محلياً دائماً أياً كانت قيمته: أسطر `DEBUG` التشخيصية، وسطر `reporting:` عند البدء، وتحذير التخفيض، وسطر `internet answers late, not never` المحلي، وتحذيرا المسح من أوامر الطرفية، وثلاثة أسطر خطأ داخلية. في `both` و`remote` يُحفظ السطر الذي لا يمكن إرساله (الجهاز بلا إنترنت، أو فشل الإرسال) في ملف المخزون المؤقت ويُسلَّم بترتيبه حين يعود الإنترنت؛ ويتوقف التسليم عند أول إرسال فاشل وينتظر الباقي المحاولة التالية. يحفظ المخزون `SPOOL_CAP` سطراً، والسطر الأول محفوظ دائماً. هذا المفتاح يتحكم أيضاً في خانة الواي فاي حين يكون `REPORT_WIFI` هو `auto`.
 
 يحتاج `SITE_URL`. `REPORT_WIFI=auto` يتبعه (تُرسل الخانة في `both` و`remote` فقط). `SPOOL_CAP` يحد قصة الانقطاع التي يحفظها `both` و`remote`. أسطر `DEBUG` لا تُرسل إلى الموقع أبداً ولا يحذفها `remote`. `LOG_LANG` يبقى هو الذي يختار لغة ما يتركه `remote` في الملف المحلي.
 
 أسطر السجل:
 
-- `[INFO][${dd/mm HH:MM:SS}] reporting: ${LOG_TARGET} -> ${SITE_URL} | probe: ${probe target} | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}`
-- `[WARN][${dd/mm HH:MM:SS}] LOG_TARGET asked for the site but SITE_URL is empty - running local-only`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] reporting: ${LOG_TARGET} -> ${SITE_URL} | probe: ${probe target} | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] LOG_TARGET asked for the site but SITE_URL is empty - running local-only`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: measured mode, floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night (night ${NIGHT_START}-${NIGHT_END}), switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${minutes} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${n} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (جزء `wifi cell` يقرأ `off (auto with LOG_TARGET local)` حين يُبقي `local` الخانة مع `REPORT_WIFI=auto`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] site did not take the log line (${http ${code}|no reply in 4 s}) - holding lines, delivery retried about every ${m} min` (مرة في كل نوبة رفض؛ يُكتب في الملف المحلي حتى مع `remote` لأنه `WARN`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] delivered ${n} held lines stamped ${HH:MM} to ${HH:MM} - they stand above this line with their own times` (بعد كل تفريغ سلّم أسطراً محتجزة، إلا تفريغ بدء لم يُحتجز فيه سوى أسطر البدء نفسها؛ يُرسل في المقدمة بعدها فتقف فوقه في الصفحة بأوقاتها)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] site reachable again - delivered ${n} held lines stamped ${HH:MM} to ${HH:MM}, they stand above this line with their own times` (التفريغ الذي يختم نوبة رفض)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] outage story trimmed - ${n} lines dropped from its middle (the spool keeps ${SPOOL_CAP})` (بعد تفريغ سلّم القصة كاملة، مرة لكل انقطاع)
 
 متى تغيّره: اضبطه على `both` حين يوجد موقع وتريد نسخة على بطاقة الذاكرة أيضاً؛ وعلى `remote` حين يكون الموقع هو المرجع ويكفي الملف المحلي بالتحذيرات والأخطاء.
 
@@ -151,20 +176,29 @@ LOG_TARGET="both"
 
 الافتراضي: `""` (فارغ = نقطة استقبال الموقع `${SITE_URL}/${DEVICE_ID}/${SITE_API}`، أو وضع الإشارة حين يكون `SITE_URL` فارغاً أيضاً)
 
-المسموح: أي عنوان `http://` أو `https://` بلا مسافات، يُستعمل كما كُتب (لا يُلحق به شيء). ما عدا ذلك يُفرَغ بصمت.
+المسموح: أي عنوان `http://` أو `https://` بلا مسافات، يُستعمل كما كُتب (لا يُلحق به شيء). ما عدا ذلك يُفرَغ ويُسمّى المفتاح في سطر المفاتيح الساقطة عند البدء.
 
 الوحدة: عنوان URL
 
-أين يرسل قياس الرفع جسمه. يرفع القياس `PROBE_KB` كيلوبايت من الأصفار بـ `curl` (بحد 15 ثانية) ويقرأ رقم سرعة الرفع الذي يحسبه `curl` نفسه؛ فإن غاب `curl` أو أعاد صفراً، يرسل `wget` البايتات نفسها من ملف مؤقت ويُحسب الرقم من الزمن المنقضي؛ وإن غاب `wget` أيضاً فالرقم 0. لا يُفحص رد الخادم بل سرعة النقل فقط، فأي خادم يقبل جسم `POST` يصلح؛ ومع بديل `wget` يُعد الرد 4xx أو 5xx رفعاً مكتملاً، ولا يُقرأ صفراً إلا فشل النقل أو انتهاء المهلة. الفارغ يعني نقطة استقبال الموقع، فالموقع وحده يكفي للقياس. وحين يكون `PROBE_URL` و`SITE_URL` فارغين معاً فلا مكان يُرفع إليه، ويعمل الحارس في [وضع الإشارة](#وضع-الإشارة).
+أين يرسل قياس الرفع جسمه. يرفع القياس `PROBE_KB` كيلوبايت من الأصفار بـ `curl` (بحد 15 ثانية) ويقرأ رقم سرعة الرفع الذي يحسبه `curl` نفسه؛ فإن غاب `curl` أو أعاد صفراً، يرسل `wget` البايتات نفسها من ملف مؤقت ويُحسب الرقم من الزمن المنقضي؛ وإن غاب `wget` أيضاً فالرقم 0؛ والقياس الذي لم يقبل الهدف بايتاته يُقال في لحظة القرار بسطر `upload probe failed` أدناه ويُحسب صفراً. لا يُفحص رد الخادم بل سرعة النقل فقط، فأي خادم يقبل جسم `POST` يصلح؛ ومع بديل `wget` يُعد الرد 4xx أو 5xx رفعاً مكتملاً، ولا يُقرأ صفراً إلا فشل النقل أو انتهاء المهلة. الفارغ يعني نقطة استقبال الموقع، فالموقع وحده يكفي للقياس. وحين يكون `PROBE_URL` و`SITE_URL` فارغين معاً فلا مكان يُرفع إليه، ويعمل الحارس في [وضع الإشارة](#وضع-الإشارة).
 
 `SITE_URL` يوفر الهدف البديل. `PROBE_KB` يحدد حجم الجسم. في وضع الإشارة لا أثر لـ `MIN_UP_KBPS` و`UP_STRIKES` و`SWITCH_GAIN_PCT` و`DANCE_COOLDOWN` و`STREAM_MIN_KBPS` وأرقام الليل (`NIGHT_MIN_UP_KBPS` و`NIGHT_GAIN_PCT` و`NIGHT_DANCE_COOLDOWN`) على أي قرار، إذ لا قياس يُقارن؛ لكن سطرَي وضع النهار والليل يبقيان في السجل. أمر الطرفية `awacs.sh speed` يقيس على الهدف نفسه. `PROBE_URL` وحده بلا `SITE_URL` يعطي اختيار شبكة بالرفع المقيس بلا تقارير.
 
 أسطر السجل:
 
-- `[INFO][${dd/mm HH:MM:SS}] reporting: ${LOG_TARGET} | probe: ${PROBE_URL} | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}`
-- `[INFO][${dd/mm HH:MM:SS}] reporting: local | probe: none - signal mode | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}` (حين يكون الاثنان فارغين)
-- `[OK][${dd/mm HH:MM:SS}] connected: ${SSID} (signal mode - no upload probe target configured)`
-- `[OK][${dd/mm HH:MM:SS}] returned to preferred network: ${SSID} (signal mode)` (في وضع الإشارة؛ وإلا يقرأ القوس `(upload ${kbps} kbps)`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] reporting: ${LOG_TARGET} | probe: ${PROBE_URL} | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] reporting: local | probe: none - signal mode | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}` (حين يكون الاثنان فارغين)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] measured ${kbps} kbps on ${SSID} - under the ${floor} kbps floor, a challenger must beat ${bar} kbps`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] measured ${kbps} kbps on ${SSID} - above the ${floor} kbps floor, staying`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] trying ${SSID}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] could not connect to ${SSID}: ${reason} - trying the next` (السبب `never associated` أو `associated but got no address` أو `refused - wrong password?` أو `not found on the air` أو `timed out after ${ASSOC_WAIT} s` أو `NetworkManager not answering` أو `NetworkManager: ${message}` أو `linked but no internet`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] connected: ${SSID} (signal mode - no upload probe target configured)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] returned to preferred network: ${SSID} (signal mode)` (في وضع الإشارة؛ وإلا يقرأ القوس `(upload ${kbps} kbps)`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: measured mode, floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night (night ${NIGHT_START}-${NIGHT_END}), switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${minutes} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${n} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (يختم البداية حين يوجد هدف قياس)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: signal mode (no probe target - networks chosen by signal), reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${n} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (بدونه)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] upload probe failed on ${SSID} - the probe target accepted nothing (site or endpoint down?), counting it as 0 kbps` (بدل سطر القياس حين لم يقبل الهدف الرفع، في التقييم أو لمرشح أو عند الوصول إلى شبكة مفضلة)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] connected to EMERGENCY network: ${SSID} (${upload ${kbps} kbps|signal mode}) - stored networks stay armed, home again when one returns` (قياس واحد على الشبكة الجديدة؛ و`signal mode` بلا هدف)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] connected to OPEN network: ${SSID} (${upload ${kbps} kbps|signal mode}) - stored networks stay armed, home again when one returns`
 
 متى تغيّره: حين يجب أن يُقاس الرفع على مضيف غير موقع التقارير (خادم أقرب، أو مستقبِل بسيط)، أو حين تريد اختيار شبكة مقيساً دون تشغيل أي موقع.
 
@@ -186,17 +220,26 @@ PROBE_URL="https://probe.example.org/sink"
 
 الوحدة: كلمة وضع
 
-هل ينشر الحارس خانة الواي فاي إلى الموقع: سطر واحد بالشكل `kbps,visible,total,band,SSID` يُرسل إلى نقطة الاستقبال بالحقلين `file=tmp/wifi.tmp` و`data=${kbps},${visible},${total},${band},${SSID}`. `auto`: فقط حين تذهب أسطر القصة إلى الموقع أيضاً (`SITE_URL` مضبوط و`LOG_TARGET` هو `both` أو `remote`). `yes`: ما دام `SITE_URL` مضبوطاً، ولو كان `LOG_TARGET` هو `local`. `no`: أبداً. بلا `SITE_URL` لا يُرسل شيء في أي وضع. تُرسل الخانة من الحلقة الرئيسية فقط ما دام الإنترنت متحققاً منه، في أول دورة سليمة ثم كل ست دورات (نحو كل 80 ثانية بالافتراضيات)، في الخلفية؛ ولا تُرسل أبداً في وضع المراقبة فقط على صورة NetworkManager لا يستطيع الحارس قيادتها. `total` هو عدد شبكات الواي فاي المخزنة و`visible` ما ظهر منها في الهواء؛ وكلاهما من ذاكرة المسح المؤقتة الموجودة (قائمة NetworkManager نفسها بلا إعادة مسح على ذلك النظام)، فلا تُسبَّب أي حركة راديو. `kbps` هو آخر سرعة رفع مقيسة ولا يُرسل إلا إن قيس على الشبكة التي عليها الجهاز الآن، وإلا 0 (ودائماً 0 في وضع الإشارة). `band` هو `2.4GHz` أو `5GHz` أو `6GHz` من تردد الوصلة الحية، وفارغ حين يتعذر قراءة التردد؛ و`SSID` أخيراً لتنجو فواصله، وشرطة تحل محله حين لا يوجد.
+هل ينشر الحارس خانة الواي فاي إلى الموقع: سطر واحد بالشكل `kbps,visible,total,band,SSID` يُرسل إلى نقطة الاستقبال بالحقلين `file=tmp/wifi.tmp` و`data=${kbps},${visible},${total},${band},${SSID}`. `auto`: فقط حين تذهب أسطر القصة إلى الموقع أيضاً (`SITE_URL` مضبوط و`LOG_TARGET` هو `both` أو `remote`). `yes`: ما دام `SITE_URL` مضبوطاً، ولو كان `LOG_TARGET` هو `local`. `no`: أبداً. بلا `SITE_URL` لا يُرسل شيء في أي وضع. تُرسل الخانة من الحلقة الرئيسية فقط ما دام الإنترنت متحققاً منه، في أول دورة سليمة ثم كل ست دورات سليمة (نحو 60 إلى 80 ثانية بالافتراضيات)، في الخلفية؛ ولا تُرسل أبداً في وضع المراقبة فقط على صورة NetworkManager لا يستطيع الحارس قيادتها. `total` هو عدد شبكات الواي فاي المخزنة و`visible` ما ظهر منها في الهواء؛ وكلاهما من ذاكرة المسح المؤقتة الموجودة (قائمة NetworkManager نفسها بلا إعادة مسح على ذلك النظام)، فلا تُسبَّب أي حركة راديو؛ وحين لا يوجد ملف ذاكرة بعد (لا مسح منذ الإقلاع) يُقرأ `visible` على `wpa` من جدول `wpa_cli scan_results` بلا مسح، أما الملف الفارغ فحكم الراديو الأصم ويبقى؛ وما دام الجهاز مرتبطاً بشبكة يعرفها النظام لا يقل `visible` عن 1. `kbps` هو آخر سرعة رفع مقيسة ولا يُرسل إلا إن قيس على الشبكة التي عليها الجهاز الآن، وإلا 0 (ودائماً 0 في وضع الإشارة). `band` هو `2.4GHz` أو `5GHz` أو `6GHz` من تردد الوصلة الحية، وفارغ حين يتعذر قراءة التردد؛ و`SSID` أخيراً لتنجو فواصله، وشرطة تحل محله حين لا يوجد.
+
+المفتاح نفسه يحكم قائمة مسح الواي فاي، `file=tmp/wifi_scan.tmp`: الشبكات التي سمعها الراديو، للقائمة خلف خانة الواي فاي في الموقع. تُقرَّر في الحلقة الرئيسية في دقيقة الخانة وتُرسل في الخلفية، مرة كل 60 ثانية على الأكثر، وفقط حين يوجد مسح جديد: على `wpa` مسح وصل إلى الراديو فعلاً (مسح الحارس نفسه، أو جدول الأداة البديلة، أو الحكم أن الراديو لم يسمع شيئاً، وهو ينشر قائمة فارغة)؛ وعلى NetworkManager جدوله هو، مقروءاً بلا إعادة مسح، حين تتغير صفوفه. الذاكرة المؤقتة المقدَّمة لا تُنشر من جديد أبداً، والقائمة المرفوضة تُعاد كل دقيقة. النص وقت المسح بثواني يونكس في السطر الأول، ثم سطر لكل شبكة، الأقوى أولاً، 12 على الأكثر، بستة حقول تفصلها جدولات: اسم العرض، والإشارة بـ dBm (على NetworkManager محوَّلة من نسبته: 100 % عند -40 dBm و0 % عند -100)، والرفع المقيس على تلك الشبكة أثناء عمل هذه العملية، ووقت ذلك القياس بثواني يونكس (كلاهما فارغ حين لم يُقَس)، و`known` (`1` لشبكة محفوظة و`0` لغيرها) والاسم بالست عشري الصغير، وهو المفتاح الذي يسمّي به أمر الموقع الشبكة. السرعات هي قياسات الرفع التي يجريها الحارس نفسه على شبكة مسمّاة (الشبكة الحالية عند التقييم، وكل مرشح، والشبكة المفضلة عند الوصول، والشبكة المؤقتة التي فازت) وتعيش عمر العملية؛ والقياس الذي رفضه الهدف لا يُحفَظ. ولا تُرسل القائمة من أوامر الطرفية أبداً.
 
 يتفاعل مع `SITE_URL` (لا شيء بدونه)، و`LOG_TARGET` (`auto` يتبعه)، و`TICK` (يحدد تباعد الدورات الست)، و`SCAN_TTL` (كم يكون عدد الشبكات الظاهرة حديثاً)، و`PROBE_URL` ووضع الإشارة (`kbps` يبقى 0)، وتغيير الشبكة منذ آخر قياس (`kbps` يُعرض 0).
 
 أسطر السجل:
 
-- `[INFO][${dd/mm HH:MM:SS}] reporting: ${LOG_TARGET} -> ${SITE_URL} | probe: ${probe target} | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}` (يظهر الإعداد فيه في الجزء `wifi cell: ${REPORT_WIFI}`؛ ولا يُكتب سطر سجل لكل إرسال)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] reporting: ${LOG_TARGET} -> ${SITE_URL} | probe: ${probe target} | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}` (يظهر الإعداد فيه في الجزء `wifi cell: ${REPORT_WIFI}`؛ ولا يُكتب سطر سجل لكل إرسال، بل عند رفض الموقع للخانة وعند قبولها من جديد فحسب)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: measured mode, floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night (night ${NIGHT_START}-${NIGHT_END}), switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${minutes} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${n} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (جزء `wifi cell` يقول ما تعمل به الخانة فعلاً)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] wifi cell asked for (REPORT_WIFI=yes) but SITE_URL is empty - nothing to publish to` (`yes` بلا موقع، مرة عند البدء)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] wifi cell not accepted by the site (${http ${code}|no reply in 4 s}) - the page drops the cell when it goes stale` (رد الموقع على الخانة خارج 2xx و3xx، أو لا رد خلال 4 ثوانٍ؛ مرة في كل نوبة، والإرسالات التالية صامتة)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] wifi cell accepted again` (أول قبول بعد نوبة رفض)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] wifi scan list not accepted by the site (${http ${code}|no reply in 4 s}) - the list behind the WiFi box will not show` (رد الموقع على القائمة خارج 2xx و3xx، أو لا رد خلال 4 ثوانٍ؛ مرة في كل نوبة، وتُعاد المحاولة كل دقيقة بصمت)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] wifi scan list accepted again` (أول قبول للقائمة بعد نوبة رفض)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] device id changed: ${old} -> ${new} - reporting under ${new} from now` (يُفحص على إيقاع الخانة)
 
-متى تغيّره: اضبطه على `no` حين لا يعرض الموقع خانة واي فاي أو تريد قطع الطلب الدوري؛ وعلى `yes` حين تريد الخانة مع بقاء أسطر القصة محلية.
+متى تغيّره: اضبطه على `no` حين لا يعرض الموقع خانة الواي فاي ولا قائمة المسح أو تريد قطع الطلبات الدورية؛ وعلى `yes` حين تريد الخانة مع بقاء أسطر القصة محلية.
 
-لا يعرض الموقع أداة واي فاي، فإرسال الخانة نحو كل 80 ثانية حركة ضائعة:
+لا يعرض الموقع أداة واي فاي، فإرسال الخانة كل ست دورات سليمة (نحو 60 إلى 80 ثانية بالافتراضيات) حركة ضائعة:
 
 </div>
 
@@ -210,17 +253,23 @@ REPORT_WIFI="no"
 
 الافتراضي: `""` (فارغ = المنطقة الزمنية للجهاز نفسه)
 
-المسموح: اسم منطقة زمنية حتى 64 حرفاً من الحروف والأرقام و`/` و`_` و`+` و`-`، مثل `Asia/Kuwait` أو `Europe/Berlin` أو `UTC`. ما عدا ذلك يُفرَغ بصمت. يُفحص الشكل فقط لا وجود المنطقة على الجهاز؛ والاسم السليم الشكل الذي لا يعرفه الجهاز يمر الفحص وتُقرأ أختام الموقع عندها بتوقيت UTC.
+المسموح: اسم منطقة زمنية حتى 64 حرفاً من الحروف والأرقام و`/` و`_` و`+` و`-`، مثل `Asia/Kuwait` أو `Europe/Berlin` أو `UTC`. ما عدا ذلك يُفرَغ ويُسمّى المفتاح في سطر المفاتيح الساقطة عند البدء. يُفحص الشكل فقط لا وجود المنطقة على الجهاز؛ والاسم السليم الشكل الذي لا يعرفه الجهاز يمر الفحص وتُقرأ أختام الموقع عندها بتوقيت UTC، ويقول الحارس ذلك مرة عند البدء.
 
 الوحدة: اسم منطقة زمنية بصيغة قاعدة tz
 
-المنطقة الزمنية المستعملة لختم الأسطر المرسلة إلى الموقع. يُبنى كل سطر موقع بالشكل `[${LEVEL}] AWACS: ${text}, ${dd/mm/yyyy hh:mm:ss AM|PM}.`، ويُؤخذ ذلك الختم بعد ضبط `TZ` على هذه القيمة. السجل المحلي لا يتأثر: تحتفظ أسطره بمنطقة الجهاز بالشكل `[${LEVEL}][${dd/mm HH:MM:SS}]`. الأسطر المحفوظة في المخزون المؤقت أثناء الانقطاع تحمل ختم لحظة حدوثها لا لحظة تسليمها.
+المنطقة الزمنية المستعملة لختم الأسطر المرسلة إلى الموقع. يُبنى كل سطر موقع بالشكل `${yyyy-mm-ddThh:mm:ss+hh:mm} [${LEVEL}][awacs] ${text}`، ويُؤخذ ذلك الختم بعد ضبط `TZ` على هذه القيمة. السجل المحلي يستعمل الختم نفسه، فيقرأ الملفان اللحظة نفسها. الأسطر المحفوظة في المخزون المؤقت أثناء الانقطاع تحمل ختم لحظة حدوثها لا لحظة تسليمها.
 
 لا يهم إلا حين تذهب أسطر القصة إلى الموقع (`SITE_URL` مضبوط و`LOG_TARGET` هو `both` أو `remote`). `SITE_LANG` يغيّر نص السطر نفسه لا ختمه. خانة الواي فاي لا تحمل ختماً زمنياً. نافذة الليل (`NIGHT_START` و`NIGHT_END`) تتبع ساعة الجهاز لا هذه المنطقة.
 
 أسطر السجل:
 
-- `[${LEVEL}] AWACS: ${text}, ${dd/mm/yyyy hh:mm:ss AM|PM}.` (السطر كما يُرسل إلى الموقع؛ وسطر الملف المحلي `[${LEVEL}][${dd/mm HH:MM:SS}] ${text}` بمنطقة الجهاز)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [${LEVEL}][awacs] ${text}` (السطر كما يُرسل إلى الموقع؛ وسطر الملف المحلي `${yyyy-mm-ddThh:mm:ss+hh:mm} [${LEVEL}] ${text}` بمنطقة الجهاز)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] time zone ${SITE_TZ} is unknown on this device (${no such zone|tzdata not installed}) - stamps fall back to UTC` (مرة عند البدء، لاسم بالشكل `Area/City` لا ملف له تحت `/usr/share/zoneinfo`؛ سلسلة POSIX مثل `KST-3` لا تُفحص)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: measured mode, floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night (night ${NIGHT_START}-${NIGHT_END}), switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${minutes} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${n} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (جزء `stamps in` هو هذه المنطقة أو `the device zone`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] clock set ${forward|back} ${duration} by time sync - the lines above carry the old time` (مرة في كل قفزة: تحركت ساعة الجهاز أكثر من 60 ثانية بين دورتين مقارنةً بساعة النظام الرتيبة، كما تفعل لوحة بلا ساعة ببطارية عند أول مزامنة للوقت؛ والأختام فوقه، بأي منطقة كانت، تحمل الوقت الذي قبل القفزة؛ والفرق يُقرأ `7 h 0 min` أو `2 min`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] reboot clock armed - the device reboots after ${HH:MM} unless the internet returns or the fault reads external` (الوقت بهذه المنطقة)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] repeated ${n} more times during the outage (last at ${HH:MM}): ${line}` (الوقت بهذه المنطقة)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] starting after the reboot AWACS ordered at ${yyyy-mm-dd HH:MM} - wedged ${REBOOT_AFTER_MIN} min (${tell}), ${n} recovery runs before it` (الختم بهذه المنطقة)
 
 متى تغيّره: حين تعمل ساعة الجهاز على UTC أو منطقة أخرى بينما يقرأ الموقعَ شخصٌ في منطقة مختلفة.
 
@@ -248,7 +297,7 @@ SITE_TZ="Asia/Kuwait"
 
 أسطر السجل:
 
-- `[INFO][${dd/mm HH:MM:SS}] reporting: ${LOG_TARGET} -> ${SITE_URL} | probe: ${probe target} | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] reporting: ${LOG_TARGET} -> ${SITE_URL} | probe: ${probe target} | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}`
 
 متى تغيّره: حين يفضّل من يقرأ `/var/log/awacs.log` على الجهاز العربية.
 
@@ -270,14 +319,14 @@ LOG_LANG="ar"
 
 الوحدة: رمز لغة
 
-لغة النص في أسطر القصة المرسلة إلى الموقع، تُختار مستقلة عن `LOG_LANG`. البادئة الثابتة `[${LEVEL}] AWACS:` والختم الزمني في النهاية واحدان في اللغتين؛ ولا يتغير إلا النص بينهما. خانة الواي فاي أرقام واسم شبكة، فلا تتأثر.
+لغة النص في أسطر القصة المرسلة إلى الموقع، تُختار مستقلة عن `LOG_LANG`. الختم الزمني والوسم `[LEVEL][awacs]` في أول السطر واحدان في اللغتين؛ ولا يتغير إلا النص بعدهما. خانة الواي فاي أرقام واسم شبكة، فلا تتأثر.
 
 لا يُرى أثره إلا حين تذهب أسطر القصة إلى الموقع (`SITE_URL` مضبوط و`LOG_TARGET` هو `both` أو `remote`). `SITE_TZ` يضبط ختم السطر نفسه. `LOG_LANG` مستقل عنه.
 
 أسطر السجل:
 
-- `[${LEVEL}] AWACS: ${text}, ${dd/mm/yyyy hh:mm:ss AM|PM}.`
-- `[INFO][${dd/mm HH:MM:SS}] reporting: ${LOG_TARGET} -> ${SITE_URL} | probe: ${probe target} | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [${LEVEL}][awacs] ${text}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] reporting: ${LOG_TARGET} -> ${SITE_URL} | probe: ${probe target} | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}`
 
 متى تغيّره: حين تُقرأ لوحة المتابعة بالعربية ويبقى السجل المحلي بالإنجليزية، أو العكس.
 
@@ -293,7 +342,12 @@ SITE_LANG="ar"
 
 ### DEVICE_ID
 
-هوية الجهاز هي المجلد في كل عنوان موقع: `${SITE_URL}/${DEVICE_ID}/${SITE_API}`. ليست مفتاحاً في القالب، الذي يذكرها فقط بوصفها قادمة من البيئة: سطر `export DEVICE_ID=` في `rc.local`، أو الملف الإضافي للوحدة `awacs.service.d/10-device-id.conf` الذي يحمل `Environment=DEVICE_ID=`. يحلّ الحارس الهوية من جديد كلما احتاجها، لا مرة واحدة عند البدء، لأن سكربت الإقلاع قد يكتب الملف بعد انطلاق الحارس. الترتيب: أولاً المتغير `DEVICE_ID` إن كان مضبوطاً وغير فارغ؛ وإلا أول سطر غير فارغ من `/tmp/device_id`؛ ثم يجب أن تطابق النتيجة `^[A-Za-z0-9_-]{1,32}$` (حروف وأرقام و`_` و`-`، من 1 إلى 32 حرفاً)، وإلا يُستعمل اسم المضيف المختصر (`hostname -s`)؛ ويُفحص اسم المضيف بالقاعدة نفسها، فإن فشل هو أيضاً كانت الهوية الكلمة `device`. قيمة المتغير التي تفشل الفحص تذهب مباشرة إلى اسم المضيف؛ ولا يُستشار ملف `/tmp` إلا حين يكون المتغير فارغاً. القاعدة موجودة لأن `/tmp` يكتبه أي مستخدم محلي، والهوية تصل إلى طرفية `root` وإلى عنوان صادر. تظهر الهوية أيضاً في سطر القصة الافتتاحي `AWACS ${VERSION} starting on ${IF} (device ${DEVICE_ID})` وفي شاشة `awacs.sh status` في الصف المسمى `device`.
+هوية الجهاز هي المجلد في كل عنوان موقع: `${SITE_URL}/${DEVICE_ID}/${SITE_API}`. ليست مفتاحاً في القالب، الذي يذكرها فقط بوصفها قادمة من البيئة: سطر `export DEVICE_ID=` في `rc.local`، أو الملف الإضافي للوحدة `awacs.service.d/10-device-id.conf` الذي يحمل `Environment=DEVICE_ID=`. يحلّ الحارس الهوية من جديد كلما احتاجها، لا مرة واحدة عند البدء، لأن سكربت الإقلاع قد يكتب الملف بعد انطلاق الحارس. الترتيب: أولاً المتغير `DEVICE_ID` إن كان مضبوطاً وغير فارغ؛ وإلا أول سطر غير فارغ من `/tmp/device_id`؛ ثم يجب أن تطابق النتيجة `^[A-Za-z0-9_-]{1,32}$` (حروف وأرقام و`_` و`-`، من 1 إلى 32 حرفاً)، وإلا يُستعمل اسم المضيف المختصر (`hostname -s`)؛ ويُفحص اسم المضيف بالقاعدة نفسها، فإن فشل هو أيضاً كانت الهوية الكلمة `device`. قيمة المتغير التي تفشل الفحص تذهب مباشرة إلى اسم المضيف؛ ولا يُستشار ملف `/tmp` إلا حين يكون المتغير فارغاً. القاعدة موجودة لأن `/tmp` يكتبه أي مستخدم محلي، والهوية تصل إلى طرفية `root` وإلى عنوان صادر. تظهر الهوية أيضاً في سطر القصة الافتتاحي `AWACS ${VERSION} starting on ${IF} (device ${DEVICE_ID}) - ${wpa|NetworkManager} backend, ${first start of this boot, up ${uptime}|restart ${n} of this boot}` وفي شاشة `awacs.sh status` في الصف المسمى `device`.
+
+القيمة الموجودة التي تفشل الفحص يسمّيها الحارس مرة عند البدء مع مصدرها، بعد حذف محارف التحكم منها وقصّها إلى 40 حرفاً، ومع الهوية التي يبلّغ بها بدلاً منها؛ والهوية الغائبة تبقى صامتة لأنها تصميم. وحين تتغير الهوية أثناء العمل، كما في الكتابة المتأخرة لـ `/tmp/device_id`، يقول ذلك مرة على إيقاع خانة الواي فاي ويسمّي المجلد الذي تنزل فيه القصة من تلك اللحظة:
+
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] device id not usable (${DEVICE_ID|/tmp/device_id}: ${value}) - reporting as ${id}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] device id changed: ${old} -> ${new} - reporting under ${new} from now`
 
 ### أشكال النشر
 
@@ -309,7 +363,7 @@ SITE_LANG="ar"
 
 <div dir="rtl">
 
-النتيجة: السجل `/var/log/awacs.log` هو المخرج الوحيد؛ ولا يخرج من الجهاز أي طلب للتقارير؛ ووضع الإشارة (تُختار الشبكات بالإشارة، ولا قياس للرفع، ولا خانة واي فاي). سطر البدء: `reporting: local | probe: none - signal mode | wifi cell: auto | lang: local en, site en`. الإنعاش، وتصنيف الانقطاع، وقاعدة إعادة التشغيل، وشبكات الطوارئ، والشبكات المفتوحة، ووضعا النهار والليل تعمل كما تعمل مع موقع. ولإبقاء الاختيار المقيس بلا موقع أضف `PROBE_URL` وحده مشيراً إلى أي عنوان يقبل جسم `POST`، مثل `PROBE_URL="https://probe.example.org/sink"`.
+النتيجة: السجل `/var/log/awacs.log` هو المخرج الوحيد؛ ولا يخرج من الجهاز أي طلب للتقارير؛ ووضع الإشارة (تُختار الشبكات بالإشارة، ولا قياس للرفع، ولا خانة واي فاي). سطر البدء: `reporting: local | probe: none - signal mode | wifi cell: auto | lang: local en, site en`؛ ويختم البدء `running with: signal mode (no probe target - networks chosen by signal), reboot after 30 min wedged, wifi cell off (no SITE_URL), 3 stored networks, 0 emergency, open networks yes, stamps in the device zone`. الإنعاش، وتصنيف الانقطاع، وقاعدة إعادة التشغيل، وشبكات الطوارئ، والشبكات المفتوحة، ووضعا النهار والليل تعمل كما تعمل مع موقع. ولإبقاء الاختيار المقيس بلا موقع أضف `PROBE_URL` وحده مشيراً إلى أي عنوان يقبل جسم `POST`، مثل `PROBE_URL="https://probe.example.org/sink"`.
 
 **مستقبِل تستضيفه بنفسك.** أحد المستقبِلين المرفقين موضوع على مضيفك بحيث يجيب `${SITE_URL}/${DEVICE_ID}/receiver.php` (انظر [integration.md](integration.md)):
 
@@ -324,7 +378,7 @@ SITE_TZ="Asia/Kuwait"
 
 <div dir="rtl">
 
-النتيجة: جهاز هويته `mydevice` يرسل إلى `https://example.org/awacs/mydevice/receiver.php`؛ وتذهب أسطر القصة إلى الملف والموقع؛ ويستعمل قياس الرفع نقطة الاستقبال نفسها (اختيار الشبكة بالرفع المقيس مفعّل)؛ ويكتسب فحص الإنترنت درجته الأخيرة؛ وتُرسل خانة الواي فاي نحو كل 80 ثانية (`REPORT_WIFI=auto` مع `LOG_TARGET=both`). سطر البدء: `reporting: both -> https://example.org/awacs | probe: https://example.org/awacs/mydevice/receiver.php | wifi cell: auto | lang: local en, site en`.
+النتيجة: جهاز هويته `mydevice` يرسل إلى `https://example.org/awacs/mydevice/receiver.php`؛ وتذهب أسطر القصة إلى الملف والموقع؛ ويستعمل قياس الرفع نقطة الاستقبال نفسها (اختيار الشبكة بالرفع المقيس مفعّل)؛ ويكتسب فحص الإنترنت درجته الأخيرة؛ وتُرسل خانة الواي فاي كل ست دورات سليمة (نحو 60 إلى 80 ثانية بالافتراضيات؛ `REPORT_WIFI=auto` مع `LOG_TARGET=both`). سطر البدء: `reporting: both -> https://example.org/awacs | probe: https://example.org/awacs/mydevice/receiver.php | wifi cell: auto | lang: local en, site en`؛ ويختم البدء `running with: measured mode, floor 400/200 kbps day/night (night 22:00-06:00), switch gain 150%, one evaluation per 20 min, reboot after 30 min wedged, wifi cell on, 3 stored networks, 0 emergency, open networks yes, stamps in Asia/Kuwait`.
 
 **موقع كامل.** الموقع الكامل بلوحة متابعة لكل جهاز ونقطة استقبال باسمه الخاص:
 
@@ -342,7 +396,7 @@ SITE_LANG="ar"
 
 <div dir="rtl">
 
-النتيجة: الموقع هو المرجع (أسطر `INFO` و`OK` تذهب إليه وحده؛ ويحتفظ الملف المحلي بأسطر `WARN` و`ERROR` من أسطر القصة مع الأسطر المحلية دائماً)؛ ويقرأ الموقع العربية بينما يبقى الملف المحلي بالإنجليزية؛ وأختام الموقع بتوقيت الكويت؛ وخانة الواي فاي تغذي لوحة المتابعة. سطر البدء: `reporting: remote -> https://example.org | probe: https://example.org/mydevice/api/receiver.php | wifi cell: auto | lang: local en, site ar`. استعمل `LOG_TARGET="both"` بدل `remote` للاحتفاظ بنسخة محلية كاملة أيضاً.
+النتيجة: الموقع هو المرجع (أسطر `INFO` و`OK` تذهب إليه وحده؛ ويحتفظ الملف المحلي بأسطر `WARN` و`ERROR` من أسطر القصة مع الأسطر المحلية دائماً)؛ ويقرأ الموقع العربية بينما يبقى الملف المحلي بالإنجليزية؛ وأختام الموقع بتوقيت الكويت؛ وخانة الواي فاي تغذي لوحة المتابعة. سطر البدء: `reporting: remote -> https://example.org | probe: https://example.org/mydevice/api/receiver.php | wifi cell: auto | lang: local en, site ar`؛ ويختم البدء سطر `running with: measured mode, ...` نفسه مع `wifi cell on` و`stamps in Asia/Kuwait`. استعمل `LOG_TARGET="both"` بدل `remote` للاحتفاظ بنسخة محلية كاملة أيضاً.
 
 ### وضع الإشارة
 
@@ -350,9 +404,14 @@ SITE_LANG="ar"
 
 كيف تُختار الشبكة عند فقد الإنترنت: تؤخذ الشبكات المخزنة الظاهرة في الهواء بترتيب قوة الإشارة من الأقوى (الشبكة المسموعة على نطاقين مرشح واحد)، ويُتصل بكل منها بدورها، وتفوز أول شبكة تعطي إنترنت؛ فإن لم تعطِ أي منها ينتقل الإنعاش إلى خطوته التالية. لا تُتجاوز أي شبكة مرشحة ولا يُرجع إلى الشبكة السابقة في هذا الوضع، لأن كليهما يحتاج قياساً. الأسطر المميزة لهذا الوضع:
 
-- `[INFO][${dd/mm HH:MM:SS}] reporting: local | probe: none - signal mode | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}`
-- `[OK][${dd/mm HH:MM:SS}] connected: ${SSID} (signal mode - no upload probe target configured)` (والسطر العادي `connected: ${SSID} (upload ${kbps} kbps)`)
-- `[OK][${dd/mm HH:MM:SS}] returned to preferred network: ${SSID} (signal mode)` (والصيغة المقيسة تنتهي بـ `(upload ${kbps} kbps)`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] reporting: local | probe: none - signal mode | wifi cell: ${REPORT_WIFI} | lang: local ${LOG_LANG}, site ${SITE_LANG}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: signal mode (no probe target - networks chosen by signal), reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${n} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] trying ${SSID}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] could not connect to ${SSID}: ${reason} - trying the next` (السبب `never associated` أو `associated but got no address` أو `refused - wrong password?` أو `not found on the air` أو `timed out after ${ASSOC_WAIT} s` أو `NetworkManager not answering` أو `NetworkManager: ${message}` أو `linked but no internet`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] could not return to ${SSID}: ${reason}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] connected: ${SSID} (signal mode - no upload probe target configured)` (والسطر العادي `switched to ${SSID} (upload ${kbps} kbps)`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] returned to preferred network: ${SSID} (signal mode)` (والصيغة المقيسة تنتهي بـ `(upload ${kbps} kbps)`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] connected to EMERGENCY network: ${SSID} (signal mode) - stored networks stay armed, home again when one returns` (وللشبكة المفتوحة `connected to OPEN network: ${SSID} (signal mode) - ...`)
 - `no probe target (signal mode)` (بداية صف الرفع الفاشل في `awacs.sh speed`)
 
 ## شبكات الطوارئ
@@ -371,13 +430,25 @@ SITE_LANG="ar"
 
 أسطر السجل:
 
-- `[INFO][${dd/mm HH:MM:SS}] trying emergency networks (${count} listed)`
-- `[OK][${dd/mm HH:MM:SS}] connected to EMERGENCY network: ${SSID}`
-- `[DEBUG][${dd/mm HH:MM:SS}] connect_id: activating ${id} (backend ${BACKEND})`
-- `[OK][${dd/mm HH:MM:SS}] internet restored: ${SSID}` (بعد فوز داخل إنعاش بدأ من الحلقة الرئيسية؛ أما الفوز في إنعاش البدء فلا سطر له)
-- `[INFO] AWACS: trying emergency networks (${count} listed), ${dd/mm/yyyy hh:mm:ss AM|PM}.` و`[OK] AWACS: connected to EMERGENCY network: ${SSID}, ${dd/mm/yyyy hh:mm:ss AM|PM}.` (السطران نفسهما كما يستقبلهما الموقع)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] trying emergency networks (${count} listed)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] connected to EMERGENCY network: ${SSID} (${upload ${kbps} kbps|signal mode}) - stored networks stay armed, home again when one returns`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] connect_id: activating ${id} (backend ${BACKEND})`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] internet restored: ${SSID} - down ${duration}, ${n} recovery runs` (في أول دورة صحيحة بعد فوز الإنعاش، ومنه إنعاش البدء؛ المدة من سطر الفقد، والعدد إنعاشات الانقطاع، و`1 recovery run` للواحد)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO][awacs] trying emergency networks (${count} listed)` و`${yyyy-mm-ddThh:mm:ss+hh:mm} [OK][awacs] connected to EMERGENCY network: ${SSID} (${upload ${kbps} kbps|signal mode}) - stored networks stay armed, home again when one returns` (السطران نفسهما كما يستقبلهما الموقع)
 
-المدخل الذي يُتجاوز أو يفشل لا ينتج سطراً خاصاً به؛ وأثره الوحيد سطر `DEBUG` أعلاه حين يكون `DEBUG=yes`. وحين تفشل كل المدخلات و`OPEN_NETWORKS=yes` يكون السطر التالي `trying open networks as last resort`. وحين تكون القائمة فارغة لا يُكتب أي سطر وتتبع الشبكات المفتوحة مباشرة.
+مصير كل مدخل يُقال مرة لكل انقطاع، أسماء بلا كلمات سر، ويُعدّ ما يتكرر في الإنعاشات التالية بعد `internet restored`:
+
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [ERROR] emergency network ${SSID} skipped: password must be 8-63 characters or 64 hex digits` (على `nm`: عطل في الضبط)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [ERROR] emergency network ${SSID} skipped: name or password carries a quote or backslash the supplicant cannot take` (على `wpa`: عطل في الضبط)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] could not create the temporary entry for ${SSID} - skipping it` (رفضت الطبقة الأساسية إنشاء المدخل؛ `wpa_cli` الصامت يُفشل القائمة كلها هكذا)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] emergency network ${SSID} refused: ${reason} - trying the next` (السبب `never associated` أو `associated but got no address` أو `refused - wrong password?` أو `not found on the air` أو `timed out after ${ASSOC_WAIT} s` أو `NetworkManager not answering` أو `NetworkManager: ${message}` أو `linked but no internet`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] no emergency network delivered (${tried} tried, ${skipped} skipped)` (ختام المرور الخاسر)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] dropping temporary network ${SSID} - it stopped delivering` (بداية الإنعاش التالي والجهاز على مدخل مؤقت)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] back on a stored network: ${SSID} - temporary network ${SSID} removed` (الدورة الصحيحة التي تجد الجهاز على شبكة مخزنة)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] removed the temporary network ${SSID} left by the previous run` (البدء التالي بعد حارس مات؛ و`WARN` بالذيل ` - the device was still on it, recovery follows` حين كان الجهاز ما زال عليه)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: measured mode, floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night (night ${NIGHT_START}-${NIGHT_END}), switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${minutes} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${n} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (جزء `${n} emergency` هو عدد المدخلات)
+
+الرفض المتطابق في الجولات التالية يُعدّ ولا يُقال. وحين تفشل كل المدخلات يُختم المرور بسطر `no emergency network delivered`، ومع `OPEN_NETWORKS=yes` يكون السطر التالي `trying open networks as last resort (${heard} open networks heard)`. وحين تكون القائمة فارغة لا يُكتب أي سطر وتتبع الشبكات المفتوحة مباشرة.
 
 متى تغيّره: أضف مدخلاً لكل نقطة اتصال تستطيع تشغيلها من هاتف قرب الجهاز، ولكل شبكة ضيوف موثوقة تعرف كلمة سرها؛ وتأكد أن نقطة الاتصال تبث اسمها. اتركه فارغاً إن لم توجد شبكة كهذه؛ فيذهب الحارس بعد الشبكات المخزنة مباشرة إلى الشبكات المفتوحة (مع `OPEN_NETWORKS=yes`). أضف مدخلاً بكلمة سر فارغة فقط لنقطة اتصال مفتوحة تثق بها عمداً وتريد تجربتها قبل الشبكات المفتوحة الغريبة. احذف المدخل حين تُسحب نقطة الاتصال أو تتغير كلمة سرها؛ فكلمة السر القديمة تكلّف زمن المحاولة في كل جولة. لا تضع المدخلات في `awacs.sh` نفسه لأنه ملف مشترك، بل في `/etc/awacs.conf` ملك `root` بالصلاحية 0600. على النظام `wpa` استعمل عبارة سر من 8 إلى 63 حرفاً لا مفتاحاً من 64 رقماً ست عشرياً.
 
@@ -404,13 +475,13 @@ SAFETY_NET["TrustedOpenCafe"]=""
 
 **قواعد كلمة السر.** تختلف بين النظامين.
 
-**النظام `nm`.** كلمة السر غير الفارغة يجب أن تكون من 8 إلى 63 حرفاً أو 64 رقماً ست عشرياً بالضبط، وإلا يُتجاوز المدخل بصمت. أي بايتات للاسم مقبولة لأنه يُخزَّن مصفوفة بايتات، فتصلح الأسماء العربية والرموز. يعيش المدخل ملفَ مفاتيح تحت `/run/NetworkManager/system-connections` بالصلاحية 0600 ومع `autoconnect=false`.
+**النظام `nm`.** كلمة السر غير الفارغة يجب أن تكون من 8 إلى 63 حرفاً أو 64 رقماً ست عشرياً بالضبط، وإلا يُتجاوز المدخل ويُقال ذلك مرة لكل انقطاع: `emergency network ${name} skipped: password must be 8-63 characters or 64 hex digits`. أي بايتات للاسم مقبولة لأنه يُخزَّن مصفوفة بايتات، فتصلح الأسماء العربية والرموز. يعيش المدخل ملفَ مفاتيح تحت `/run/NetworkManager/system-connections` بالصلاحية 0600 ومع `autoconnect=false`.
 
-**النظام `wpa`.** يُتجاوز بصمت المدخل الذي يحوي اسمه شرطة مائلة عكسية أو علامة تنصيص مزدوجة، أو تحوي كلمة سره علامة تنصيص مزدوجة، لأن الاثنين يوضعان داخل وسيط مقتبس لـ `wpa_cli`. تمر كلمة السر إلى `wpa_cli` عبر مدخله القياسي لا عبر سطر الأوامر، فلا تظهر في قائمة العمليات. لا فحص للطول في السكربت على هذا النظام: كل أمر `set_network` يجب أن يجيب `OK`، وإلا يُتجاوز المدخل ويُزال معرّفه. ولأن القيمة تُرسل مقتبسة دائماً يقرؤها `wpa_supplicant` عبارة سر، فمفتاح 64 رقماً ست عشرياً لا يصلح هنا؛ استعمل عبارة سر من 8 إلى 63 حرفاً. يعيش المدخل في `wpa_supplicant` الحي فقط.
+**النظام `wpa`.** يُتجاوز المدخل، ويُقال ذلك مرة لكل انقطاع بالسطر `emergency network ${name} skipped: name or password carries a quote or backslash the supplicant cannot take`، حين يحوي اسمه شرطة مائلة عكسية أو علامة تنصيص مزدوجة، أو تحوي كلمة سره علامة تنصيص مزدوجة، لأن الاثنين يوضعان داخل وسيط مقتبس لـ `wpa_cli`. تمر كلمة السر إلى `wpa_cli` عبر مدخله القياسي لا عبر سطر الأوامر، فلا تظهر في قائمة العمليات. لا فحص للطول في السكربت على هذا النظام: كل أمر `set_network` يجب أن يجيب `OK`، وإلا يُتجاوز المدخل ويُزال معرّفه (`could not create the temporary entry for ${name} - skipping it`). ولأن القيمة تُرسل مقتبسة دائماً يقرؤها `wpa_supplicant` عبارة سر، فمفتاح 64 رقماً ست عشرياً لا يصلح هنا؛ استعمل عبارة سر من 8 إلى 63 حرفاً. يعيش المدخل في `wpa_supplicant` الحي فقط.
 
 **كلمة السر الفارغة عمداً.** القيمة الفارغة تعني نقطة اتصال مفتوحة مدرجة عن قصد. على `wpa` يُنشأ المدخل بـ `key_mgmt NONE`؛ وعلى `nm` يُكتب ملف المفاتيح بلا قسم `[wifi-security]`. يُجرَّب هذا المدخل مع بقية مدخلات الطوارئ، أي قبل أي شبكة مفتوحة غريبة؛ وقاعدة الطول على `nm` لا تنطبق إلا على القيمة غير الفارغة.
 
-المدخل الذي يُتجاوز أو يفشل لا ينتج سطراً خاصاً به؛ وأثره الوحيد سطر `connect_id` المحلي حين يكون `DEBUG=yes`. وحين تفشل كل المدخلات و`OPEN_NETWORKS=yes` يكون السطر التالي `trying open networks as last resort`. وحين تكون القائمة فارغة لا يُكتب أي سطر وتتبع الشبكات المفتوحة مباشرة.
+المدخل الذي يُتجاوز أو يفشل يُقال مرة لكل انقطاع بأحد أسطر `SAFETY_NET` أعلاه (التجاوز لعطل في الضبط بمستوى `ERROR`، وتعذر الإنشاء أو الرفض بمستوى `WARN` مع السبب)، ويضيف `DEBUG=yes` سطر `connect_id` المحلي. وحين تفشل كل المدخلات يُختم المرور بـ `no emergency network delivered (${tried} tried, ${skipped} skipped)`، ومع `OPEN_NETWORKS=yes` يكون السطر التالي `trying open networks as last resort (${heard} open networks heard)`. وحين تكون القائمة فارغة لا يُكتب أي سطر وتتبع الشبكات المفتوحة مباشرة.
 
 **كيف يكتب `install.sh` هذه الأسطر.** الخطوة الخامسة من المعالج تسأل `Add an emergency network?`، ثم عن اسم وكلمة سر (تُقرأ بلا صدى)، ثم بعد كل مدخل `Add another one?`. المعالج أشد صرامة من الحارس. يُفحص الاسم: غير فارغ، 32 بايتاً على الأكثر، بلا محارف تحكم، وبلا علامة تنصيص مزدوجة ولا شرطة مائلة عكسية ولا `$` ولا علامة الاقتباس الخلفية، لأن القيمة تُوضع داخل تعيين مقتبس يُنفَّذ. تُقرأ كلمة السر بلا صدى وتُفحص: المحارف الممنوعة نفسها، ثم الفارغة مقبولة، و64 رقماً ست عشرياً مقبولة، وإلا من 8 إلى 63 حرفاً. ويقرأ الرفض `Name rejected: 1 to 32 bytes, without quotes, backslash, $ or backtick.` أو `Password rejected: 8 to 63 characters, or 64 hex digits, or empty. No quotes, backslash, $ or backtick.` ثم يُسأل المدخل من جديد. يمكن إعطاء المدخلات نفسها بلا تفاعل بالراية `--safety 'SSID=password'` القابلة للتكرار، تُقسم عند أول `=` وتُفحص بالطريقة نفسها، فلا يمكن إعطاء اسم يحوي `=` بهذه الطريقة؛ و`--no-safety` أو `--yes` يتخطى الأسئلة ويكتب مدخلات `--safety` مع ذلك. عند إعادة كتابة `/etc/awacs.conf` تُحفظ الأسطر الموجودة ما عدا مفاتيح التقارير الثمانية وسطر علامة المعالج (الذي يبدأ بـ `# awacs install.sh`) وأي مدخل `SAFETY_NET` يحمل الاسم نفسه، فتُستبدل ويبقى غيرها؛ ويُطبع كل مدخل بالصيغة `SAFETY_NET["name"]="password"`، وهي الصيغة التي يتوقعها الحارس بالضبط. الكتابة ذرّية: ملف مؤقت في `/etc` بالصلاحية 0600 وملكية `root:root` ثم نقل إلى مكانه؛ وتحت `--dry-run` يُطبع المحتوى فقط مع إخفاء كل كلمة سر بـ `********`. لا يعدّل المعالج `wpa_supplicant.conf` ولا أي ملف تعريف لـ NetworkManager.
 
@@ -436,8 +507,10 @@ SAFETY_NET["TrustedOpenCafe"]=""
 
 أسطر السجل:
 
-- `[DEBUG][${dd/mm HH:MM:SS}] QA: flow=${flow} kbps, strikes=${strikes}, profile=${day|night}`
-- `[DEBUG][${dd/mm HH:MM:SS}] QA(stream): flow=${flow} kbps, strikes=${strikes}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] QA: flow=${flow} kbps, strikes=${strikes}, profile=${day|night}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] QA(stream): flow=${flow} kbps, strikes=${strikes}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] clock set ${forward|back} ${duration} by time sync - the lines above carry the old time` (تقارن كل دورة ساعة الجدار بساعة النظام الرتيبة منذ الدورة السابقة؛ الفرق فوق 60 ثانية قفزة تُقال مرة، وهي مزامنة الوقت الأولى على لوحة بلا ساعة ببطارية؛ وتكلّف الدورة `date` واحداً)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] site did not take the log line (${http ${code}|no reply in 4 s}) - holding lines, delivery retried about every ${m} min` (`${m}` هو `TICK` مضروباً في 30 مقسوماً على 60: إيقاع التفريغ)
 
 متى تغيّره: ارفعه (15 إلى 30) على جهاز يعمل ببطارية أو بطاقة منخفضة جداً لتقليل `ping` وقراءة العدّاد وإيقاظ المعالج في كل مرور؛ واخفضه (5) حين تريد أن يمتلئ عدّاد الفشل أسرع فيبدأ الإنعاش أبكر. تذكر أن الفحص الفاشل وعيّنة الثواني الثلاث يضيفان ثوانيَ فوق كل مرور، وأن `NET_FAIL_TICKS` يضاعف ما تختاره.
 
@@ -459,15 +532,27 @@ TICK=15
 
 الوحدة: مرورات للحلقة الرئيسية (دورات)
 
-كم مروراً متتالياً للحلقة الرئيسية يجب ألا يجد إنترنت قبل أن يبدأ الحارس الإنعاش. كل مرور بلا إنترنت يزيد عدّاد الفشل واحداً؛ وأي مرور بإنترنت يصفّره. حين يبلغ العدّاد `NET_FAIL_TICKS` يسجّل الحارس الفقد (في ذلك المرور وحده، فالانقطاع الواحد ينتج سطر فقد واحداً) ويستدعي الإنعاش. إن لم يفز الإنعاش استمر العدّاد في الزيادة فوق الحد واستُدعي الإنعاش في كل مرور تالٍ بلا إنترنت حتى يُتحقق من الإنترنت؛ فالمفتاح يؤخر أول إنعاش في الانقطاع فقط، والإنعاش الفائز يصفّر العدّاد. مرور الإقلاع يتجاوزه: الحارس الذي يبدأ بلا إنترنت يجري الإنعاش فوراً. الانقطاع القصير الذي يلتئم بين إنعاشين يُعلن مع ذلك بسطر العودة في المرور السليم التالي. وفي ذلك المرور يسبق كل شيء فحص واحد بشرطين: أن تكون الوصلة نفسها حية (البوابة الافتراضية ترد على `ping`، أو يذكرها جدول الجيران في النواة بحالة `REACHABLE`)، وألا يكون فحص صبور قد فشل في هذا الانقطاع بعد؛ وذلك الفحص فحص إنترنت صبور. فإن نجح حُسب المرور سليماً: لا سطر فقد، ولا إنعاش، ويسجّل الملف المحلي `internet answers late, not never - slow link, no recovery (${NET_FAIL_TICKS} quick checks timed out)`، وهو سطر لا يُرسل إلى الموقع أبداً.
+كم مروراً متتالياً للحلقة الرئيسية يجب ألا يجد إنترنت قبل أن يبدأ الحارس الإنعاش. كل مرور بلا إنترنت يزيد عدّاد الفشل واحداً؛ وأي مرور بإنترنت يصفّره. حين يبلغ العدّاد `NET_FAIL_TICKS` يسجّل الحارس الفقد (في ذلك المرور وحده، فالانقطاع الواحد ينتج سطر فقد واحداً) ويستدعي الإنعاش. إن لم يفز الإنعاش استمر العدّاد في الزيادة فوق الحد واستُدعي الإنعاش في كل مرور تالٍ بلا إنترنت حتى يُتحقق من الإنترنت؛ فالمفتاح يؤخر أول إنعاش في الانقطاع فقط، والإنعاش الفائز يصفّر العدّاد. مرور الإقلاع يتجاوزه: الحارس الذي يبدأ بلا إنترنت يقول `no internet at start` ويجري الإنعاش فوراً. الانقطاع القصير الذي يلتئم بين إنعاشين يُعلن مع ذلك بسطر العودة في المرور السليم التالي. وفي ذلك المرور يسبق كل شيء فحص واحد بشرطين: أن تكون الوصلة نفسها حية (البوابة الافتراضية ترد على `ping`، أو يذكرها جدول الجيران في النواة بحالة `REACHABLE`)، وألا يكون فحص صبور قد فشل في هذا الانقطاع بعد؛ وذلك الفحص فحص إنترنت صبور. فإن نجح حُسب المرور سليماً: لا سطر فقد، ولا إنعاش، ويسجّل الملف المحلي `internet answers late, not never - slow link, no recovery (${NET_FAIL_TICKS} quick checks timed out)`، وهو سطر لا يُرسل إلى الموقع أبداً.
 
 الزمن حتى أول إنعاش نحو `NET_FAIL_TICKS` مضروباً في (`TICK` زائد زمن الفحص الفاشل، حتى 7 إلى 10 ثوانٍ بينما تنتهي مهل `ping` وHTTP)؛ وبالافتراضيات نحو 40 إلى 63 ثانية بعد الفقد. ولأن فحص الإنترنت نفسه يجرّب ثلاثة مصادر متتالية (أربعة مع `SITE_URL`)، فالقيمة 1 تعني أن فحصاً واحداً فاشلاً بالكامل يبدأ الإنعاش. القيم الأكبر تحمي وصلة متقلبة تعمل غالباً من إعادة اتصال لا لزوم لها؛ والأصغر تستجيب أسرع. لا يُستشار عند الإقلاع. وهذا الرقم لوصلة صمتت بوابتها؛ أما الانقطاع الخارجي على وصلة ما زال موجّهها يرد فيبدأ الإنعاش بعده بنحو 72 إلى 83 ثانية، لأن فحصاً صبوراً واحداً يُدفع قبله.
 
 أسطر السجل:
 
-- `[WARN][${dd/mm HH:MM:SS}] internet lost on ${IF} - engaging`
-- `[OK][${dd/mm HH:MM:SS}] internet restored: ${SSID}`
-- `[INFO][${dd/mm HH:MM:SS}] internet answers late, not never - slow link, no recovery (${NET_FAIL_TICKS} quick checks timed out)` (الملف المحلي فقط)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] internet lost on ${SSID} - router ${still answers|silent too|none (not associated)}, engaging` (الشبكة التي كان الجهاز عليها، واسم الواجهة إن لم يكن على أي شبكة؛ وكلمة الموجّه من `ping` واحد للبوابة في هذه الدورة: يرد فالعطل فوقه، أو صامت هو أيضاً، أو لا ارتباط أصلاً)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] internet answered late ${n} more times before this loss on ${SSID} - slow link` (قبل سطر الفقد، حين كانت نوبة تأخر مفتوحة وفيها مرات لم تُقل)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] no internet at start on ${SSID} - router ${still answers|silent too|none (not associated)}, engaging` (إنعاش البدء الذي يتجاوز هذا المفتاح)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] online at start via ${SSID}` (نجح فحص البدء؛ بعد تفريغ المخزون)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] trying ${SSID}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] could not connect to ${SSID}: ${reason} - trying the next` (السبب `never associated` أو `associated but got no address` أو `refused - wrong password?` أو `not found on the air` أو `timed out after ${ASSOC_WAIT} s` أو `NetworkManager not answering` أو `NetworkManager: ${message}` أو `linked but no internet`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] switching to ${SSID} (${best_kbps} kbps, the fastest candidate)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] switched to ${SSID} (upload ${best_kbps} kbps)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] switching to ${SSID} failed: ${reason}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] internet restored: ${SSID} - down ${duration}, ${n} recovery runs` (المدة منذ سطر الفقد بالشكل `45 s` أو `3 min` أو `2 h 5 min` أو `3 d 4 h`، من ساعة النظام الرتيبة لا ساعة الجدار؛ و`1 recovery run` للواحد)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] repeated ${n} more times during the outage (last at ${HH:MM}): ${line}` (بعد `internet restored`، سطر لكل خطوة كررتها جولات الإنعاش: تُقال الخطوة أول مرة تحدث في الانقطاع ثم تُعدّ بعدها، ويُذكر وقت آخر تكرار بتوقيت الموقع)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] internet answers late, not never - slow link, no recovery (${NET_FAIL_TICKS} quick checks timed out)` (الملف المحلي فقط)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] uplink answering late on ${SSID} - ${NET_FAIL_TICKS} quick checks timed out, the patient check passed, no recovery` (نظير السطر المحلي على الموقع، مرة في بداية كل نوبة تأخر؛ المرات التالية تُعدّ)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] internet answered late ${n} more times in the last hour on ${SSID} - slow link, no recovery` (أثناء النوبة، كل ساعة على الأكثر وفقط حين وُجدت مرات جديدة)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] uplink answers normally again on ${SSID} - answered late ${n} times over ${duration}` (ختام النوبة بعد 30 دورة متتالية نجح فيها الفحص السريع؛ ولا تُفتح نوبة جديدة قبل 30 دقيقة)
 
 متى تغيّره: ارفعه (5 إلى 6) حيث تنقطع الوصلة كثيراً 20 إلى 40 ثانية وتلتئم وحدها، وإعادة الاتصال لا تزيدها إلا طولاً؛ واخفضه إلى 1 أو 2 على جهاز لا تحتمل مهمته دقيقة بلا إنترنت.
 
@@ -495,7 +580,17 @@ NET_FAIL_TICKS=6
 
 أسطر السجل:
 
-- `[DEBUG][${dd/mm HH:MM:SS}] connect_id: activating ${id} (backend ${BACKEND})`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] connect_id: activating ${id} (backend ${BACKEND})`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] trying ${SSID}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] could not connect to ${SSID}: ${reason} - trying the next` (السبب `never associated` أو `associated but got no address` أو `refused - wrong password?` أو `not found on the air` أو `timed out after ${ASSOC_WAIT} s` أو `NetworkManager not answering` أو `NetworkManager: ${message}` أو `linked but no internet`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] could not reach the preferred network ${SSID}: ${reason} - going back to ${current}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] could not reach the preferred network ${SSID}: ${reason} - no stored network to go back to, the next check decides` (حين لا يعرف الحارس الشبكة التي غادرها)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] could not return to ${SSID}: ${reason}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] back on ${SSID}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] router not answering - waiting up to ${ASSOC_WAIT} s for ${IF} to reconnect` (افتتاح الإنعاش على وصلة ميتة، مرة لكل انقطاع؛ وعلى وصلة حية `router answers on ${SSID} - keeping the link, trying the other stored networks first`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] back on ${SSID} - linked but still no internet` (الرجوع قام بلا إنترنت؛ وداخل الإنعاش يُذيَّل بـ `, recovery continues`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] the way back to ${SSID} failed - on ${SSID|no network} now, the next check decides` (بعد `could not return to` في مسار الشبكة المفضلة)
+- السبب `timed out after ${ASSOC_WAIT} s` في أسطر الفشل على `nm` هو هذا الحد بعينه
 
 متى تغيّره: ارفعه (35 إلى 45) حين يُعرف عن الموجّه أو نقطة الاتصال بطء في توزيع العناوين (العلامة: شبكة تفشل دائماً بعد `ASSOC_WAIT` ثانية بالضبط من سطر `activating` في السجل، وتعمل حين تنضم إليها يدوياً)؛ واخفضه (15) فقط على شبكات سريعة حين تريد أن يمر الإنعاش على مرشحين كثيرين بسرعة.
 
@@ -517,17 +612,27 @@ ASSOC_WAIT=40
 
 الوحدة: ثانية
 
-أقل عدد من الثواني بين نظرتين للبحث عن شبكة مخزنة أولويتها أعلى بالضبط من الشبكة الحالية (الأولوية هي قيمة `priority=` في `wpa_supplicant.conf` على الصور القديمة و`autoconnect-priority` في NetworkManager على غيرها). لا تجري النظرة إلا في مرور سليم، وتُتجاوز أثناء بث مباشر أو معاينة أو التقاط أو رفع، ولا تكلّف حركة إنترنت بل عمل راديو فقط: على الصور القديمة مسح موجّه من جهة `wpa_supplicant` (يُظهر الشبكات المخفية أيضاً) مع انتظار 4 ثوانٍ ثم قراءة نتائج المسح؛ وعلى صور NetworkManager قائمة شبكات مع إعادة مسح من NetworkManager نفسه؛ زائد قراءة قائمة الشبكات المخزنة. تحدث النظرة الأولى في أول مرور سليم بلا بث بعد البدء. يجب أن يظهر المرشح في نظرتين متتاليتين منفَّذتين قبل أن يحاول الحارس الانتقال، والنظرة التي لا تجد مرشحاً تصفّر ذلك العدّ؛ فبالافتراضي يأتي الانتقال بعد 10 إلى 20 دقيقة من ظهور الشبكة الأعلى أولوية. عند الانتقال يتصل بالمرشح، وحين يوجد هدف قياس يقيس الرفع عند الوصول: تحت الحد الساري (`MIN_UP_KBPS` نهاراً و`NIGHT_MIN_UP_KBPS` ليلاً) يُبعَد المرشح ثلاثة أمثال فترة التبريد السارية ويعود الحارس مباشرة إلى الشبكة السابقة؛ وإلا يبقى ويسجّل العودة. وإن فشلت محاولة الاتصال نفسها عاد إلى الشبكة السابقة بلا سطر قصة.
+أقل عدد من الثواني بين نظرتين للبحث عن شبكة مخزنة أولويتها أعلى بالضبط من الشبكة الحالية (الأولوية هي قيمة `priority=` في `wpa_supplicant.conf` على الصور القديمة و`autoconnect-priority` في NetworkManager على غيرها). لا تجري النظرة إلا في مرور سليم، وتُتجاوز أثناء بث مباشر أو معاينة أو التقاط أو رفع، ولا تكلّف حركة إنترنت بل عمل راديو فقط: على الصور القديمة مسح موجّه من جهة `wpa_supplicant` (يُظهر الشبكات المخفية أيضاً) مع انتظار 4 ثوانٍ ثم قراءة نتائج المسح؛ وعلى صور NetworkManager قائمة شبكات مع إعادة مسح من NetworkManager نفسه؛ زائد قراءة قائمة الشبكات المخزنة. تحدث النظرة الأولى في أول مرور سليم بلا بث بعد البدء. يجب أن يظهر المرشح في نظرتين متتاليتين منفَّذتين قبل أن يحاول الحارس الانتقال، والنظرة التي لا تجد مرشحاً تصفّر ذلك العدّ وتقول ذلك مرة في الإقامة الواحدة على الشبكة الحالية حين كان المرشح ظاهراً في النظرة السابقة، ثم تعدّ التذبذبات التالية ليذكرها سطر الانتقال؛ فبالافتراضي يأتي الانتقال بعد 10 إلى 20 دقيقة من ظهور الشبكة الأعلى أولوية. عند الانتقال يتصل بالمرشح، وحين يوجد هدف قياس يقيس الرفع عند الوصول: تحت الحد الساري (`MIN_UP_KBPS` نهاراً و`NIGHT_MIN_UP_KBPS` ليلاً) يُبعَد المرشح ثلاثة أمثال فترة التبريد السارية ويعود الحارس مباشرة إلى الشبكة السابقة؛ وإلا يبقى ويسجّل العودة. وإن فشلت محاولة الاتصال نفسها قال ذلك مع السبب وعاد إلى الشبكة السابقة؛ والعودة التي تفشل تُذكر أيضاً.
 
 البث يمنع النظرة كلها ولا يتقدم المؤقت حينها، فتجري النظرة في أول مرور سليم حر بعده. مدة الإبعاد ثلاثة أمثال فترة التبريد السارية: `DANCE_COOLDOWN` (1200 ثانية افتراضياً، فإبعاد 3600 ثانية) نهاراً و`NIGHT_DANCE_COOLDOWN` (2400 ثانية، فإبعاد 7200 ثانية) ليلاً؛ ولا تُبعَد إلا شبكة واحدة في الوقت نفسه (الإبعاد الجديد يحل محل القديم) ويتخطاها البحث حتى ينقضي الإبعاد. فحص البطء يحتاج هدف قياس (`PROBE_URL` أو `SITE_URL`)؛ وبدونه يكون الحارس في وضع الإشارة فلا يُبعِد أبداً ويبقى على الشبكة الأعلى أولوية. `ASSOC_WAIT` يحد محاولة الاتصال والعودة. لا يختار البحث شبكة بالأولوية نفسها أبداً، فمع بقاء كل الشبكات المخزنة على الأولوية الافتراضية لا شيء لهذا المفتاح يفعله؛ والشبكة المؤقتة من الطوارئ أو المفتوحة أولويتها 0، فكل شبكة مخزنة أعلى أولوية منها مرشحة ما دام الحارس عليها.
 
 أسطر السجل:
 
-- `[DEBUG][${dd/mm HH:MM:SS}] best_pref_id: cur=${current_id}(p=${current_priority}) -> best=${candidate_id|none}(p=${best_priority}) veto=${set_aside_id|none}`
-- `[INFO][${dd/mm HH:MM:SS}] higher-priority network visible - trying to go home`
-- `[WARN][${dd/mm HH:MM:SS}] preferred network too slow (${kbps} kbps) - benching it, going back`
-- `[OK][${dd/mm HH:MM:SS}] returned to preferred network: ${SSID} (upload ${kbps} kbps)`
-- `[OK][${dd/mm HH:MM:SS}] returned to preferred network: ${SSID} (signal mode)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] best_pref_id: cur=${current_id}(p=${current_priority}) -> best=${candidate_id|none}(p=${best_priority}) veto=${set_aside_id|none}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] preferred network ${SSID} was visible at one check and gone at the next - staying on ${current} until it holds for two checks in a row` (مرة في الإقامة الواحدة على الشبكة الحالية؛ التذبذبات التالية تُعدّ)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] higher-priority network ${SSID} visible twice - leaving ${current} to go home` (ويُذيَّل بـ ` (seen and lost ${n} times before)` حين سبقته تذبذبات في هذه الإقامة)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] could not reach the preferred network ${SSID}: ${reason} - going back to ${current}` (السبب `never associated` أو `associated but got no address` أو `refused - wrong password?` أو `not found on the air` أو `timed out after ${ASSOC_WAIT} s` أو `NetworkManager not answering` أو `NetworkManager: ${message}` أو `linked but no internet`) (يتبعه `back on ${current}`، أو سطر الرجوع الفاشل)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] could not reach the preferred network ${SSID}: ${reason} - no stored network to go back to, the next check decides` (حين لا يعرف الحارس شبكته الحالية لحظتها)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] measured ${kbps} kbps on ${SSID}` (عند الوصول، مع هدف قياس)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] upload probe failed on ${SSID} - the probe target accepted nothing (site or endpoint down?), counting it as 0 kbps` (بدل سطر القياس حين لم يقبل الهدف الرفع؛ يتبعه سطر الإبعاد بـ `0 kbps`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] preferred network ${SSID} too slow (${kbps} kbps, floor ${floor}) - benched for ${minutes} min, going back to ${current}` (الدقائق ثلاثة أمثال فترة التبريد السارية: 60 نهاراً و120 ليلاً بالافتراضيات؛ ويُذيَّل بـ `, ends the bench on ${SSID}` حين ينهي إبعاداً جارياً لشبكة أخرى)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] preferred network ${SSID} too slow (${kbps} kbps, floor ${floor}) - benched for ${minutes} min, staying on it` (حين لا شبكة يُرجع إليها)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] back on ${SSID}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] back on ${SSID} - linked but still no internet` (الرجوع قام بلا إنترنت؛ ولا سطر فشل بعده)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] could not return to ${SSID}: ${reason}` (فشل حقيقي للرجوع)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] the way back to ${SSID} failed - on ${SSID|no network} now, the next check decides` (بعد فشل الرجوع؛ أين الجهاز الآن يُقرأ بعد المحاولة)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] returned to preferred network: ${SSID} (upload ${kbps} kbps)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] returned to preferred network: ${SSID} (signal mode)`
 
 متى تغيّره: اخفضه (300) حين تكون نقطة اتصال هاتف محدودة البيانات بديلاً شائعاً وتريد العودة إلى المنزل أبكر (تستغرق الرؤيتان عندها 5 إلى 10 دقائق)؛ وارفعه (1800) حين تزعج المسوح الوصلة أو تتذبذب شبكة المنزل وتريد عودة هادئة جداً. اضبط أولويات الشبكات المخزنة أولاً: بلا أولوية أعلى بالضبط في مكان ما لا تفعل أي قيمة لـ `PREF_CHECK` شيئاً.
 
@@ -549,18 +654,27 @@ PREF_CHECK=300
 
 الوحدة: دقيقة
 
-كم يجب أن يستمر عطل واي فاي في الجهاز نفسه قبل أن يعيد الحارس تشغيل الجهاز. الساعة ختم زمني في الذاكرة يُضبط أول مرة تجمع فيها جولة إنعاش أدلة على عطل في الجهاز نفسه، ولا يُقارن إلا في نهاية إنعاش خسر جولاته الثلاث: إن كان عمر الرؤية الأولى `REBOOT_AFTER_MIN` دقيقة على الأقل (وعلى صور NetworkManager، إن ثبت أن NetworkManager استسلم) كتب الحارس سطر `ERROR` واحداً في السجل المحلي، وزامن الأقراص، وانتظر ثانيتين، ونفّذ `reboot`. أدلة العطل في الجهاز نفسه تعني، في جولة واحدة: البوابة الافتراضية لا تجيب `ping` (أو لا مسار افتراضي)، ولم تبلغ أي شبكة الارتباط مع عنوان في هذه الجولة، وNetworkManager ليس في حالة اتصال نشط، ومعها واحدة على الأقل من ثلاث علامات: شبكة مخزنة ظاهرة في الهواء ولا يمكن الوصول إليها؛ أو مسح الراديو يعود فارغاً (لا صورة مخزنة منذ الإقلاع، أو أُسقطت الصورة السابقة بعد ثلاثة مسوح فارغة متتالية)؛ أو قائمة الشبكات المخزنة تُقرأ فارغة. تعود الساعة إلى الصفر في أي جولة تُصنَّف خارجية (البوابة تجيب، أو قامت وصلة بعنوان بلا إنترنت، أو لا شبكة مخزنة ظاهرة بينما تُسمع شبكات أخرى)، وعند كل رؤية لكلمة سر خاطئة (شبكة معطَّلة مؤقتاً على الصور القديمة، أو فشل `nmcli` من نوع بيانات الاعتماد على NetworkManager؛ وتستمر خطوات الإنعاش)، وعند أي لحظة إنترنت متحقَّق منه، وفي كل مرور سليم للحلقة الرئيسية، وعلى صور NetworkManager كلما كان NetworkManager ما زال يحاول أو متصلاً بلا إنترنت أو يبلّغ أن الجهاز غير متاح (الحالة 20). ولأن الساعة في الذاكرة، تبدأ إعادة تشغيل الجهاز أو الحارس من الصفر؛ فالعطل الذي ينجو من إعادة التشغيل لا يستحق التالية إلا بعد سلسلة `REBOOT_AFTER_MIN` كاملة أخرى.
+كم يجب أن يستمر عطل واي فاي في الجهاز نفسه قبل أن يعيد الحارس تشغيل الجهاز. الساعة ختم زمني في الذاكرة يُضبط أول مرة تجمع فيها جولة إنعاش أدلة على عطل في الجهاز نفسه، ولا يُقارن إلا في نهاية إنعاش خسر جولاته الثلاث: إن كان عمر الرؤية الأولى `REBOOT_AFTER_MIN` دقيقة على الأقل (وعلى صور NetworkManager، إن ثبت أن NetworkManager استسلم) كتب الحارس سطر `ERROR` واحداً يسمّي العلامة الحاكمة ورقم إعادة التشغيل لهذا العطل، ونسخ المخزون المؤقت معه إلى بطاقة الذاكرة بجانب السجل مع علامة إعادة التشغيل وعدّادها، وزامن الأقراص، وانتظر ثانيتين، ونفّذ `reboot`. أدلة العطل في الجهاز نفسه تعني، في جولة واحدة: البوابة الافتراضية لا تجيب `ping` (أو لا مسار افتراضي)، ولم تبلغ أي شبكة الارتباط مع عنوان في هذه الجولة، وNetworkManager ليس في حالة اتصال نشط، ومعها واحدة على الأقل من ثلاث علامات: شبكة مخزنة ظاهرة في الهواء ولا يمكن الوصول إليها؛ أو مسح الراديو يعود فارغاً (لا صورة مخزنة منذ الإقلاع، أو أُسقطت الصورة السابقة بعد ثلاثة مسوح فارغة متتالية)؛ أو قائمة الشبكات المخزنة تُقرأ فارغة. تعود الساعة إلى الصفر في أي جولة تُصنَّف خارجية (البوابة تجيب، أو قامت وصلة بعنوان بلا إنترنت، أو لا شبكة مخزنة ظاهرة بينما تُسمع شبكات أخرى)، وعند كل رؤية لكلمة سر خاطئة (شبكة معطَّلة مؤقتاً على الصور القديمة، أو فشل `nmcli` من نوع بيانات الاعتماد على NetworkManager؛ وتستمر خطوات الإنعاش)، وعند أي لحظة إنترنت متحقَّق منه، وفي كل مرور سليم للحلقة الرئيسية، وعلى صور NetworkManager كلما كان NetworkManager ما زال يحاول أو متصلاً بلا إنترنت أو يبلّغ أن الجهاز غير متاح (الحالة 20). ولأن الساعة في الذاكرة، تبدأ إعادة تشغيل الجهاز أو الحارس من الصفر؛ فالعطل الذي ينجو من إعادة التشغيل لا يستحق التالية إلا بعد سلسلة `REBOOT_AFTER_MIN` كاملة أخرى. أما عدّاد إعادات التشغيل للعطل نفسه فملف `${LOG_FILE}.reboots` على بطاقة الذاكرة، يزيد مع كل إعادة تشغيل حتى تحذفه أول دورة صحيحة، فيقرأ السطر `reboot 2 for this fault`.
 
-لا يجري الفحص إلا في نهاية إنعاش خاسر، فتقع إعادة التشغيل بين `REBOOT_AFTER_MIN` و`REBOOT_AFTER_MIN` زائد طول إنعاش واحد (الإنعاش هو الخطوة اللطيفة، وثلاث جولات من محاولات المرشحين المحدودة بـ `ASSOC_WAIT`، وخطوة إصلاح في كل جولة، ومحاولات الطوارئ والمفتوحة، وتوقفات 20 ثانية في الفروع الخارجية). يذهب سطر `ERROR` إلى السجل المحلي فقط لا إلى الموقع، لأن الشبكة معطلة والمخزون المؤقت سيزول مع إعادة التشغيل؛ ويعرف الموقع بها من قصة الإقلاع. علامة "الراديو لا يسمع شيئاً" تعتمد على قاعدة المسوح الفارغة الثلاثة الثابتة (ليست مفتاحاً) وعلى `SCAN_TTL` الذي يحد كم تُصدَّق الصورة المخزنة. على صور NetworkManager لا تُسلَّح الساعة إلا حين تُقرأ حالة الجهاز `disconnected` (30) أو `failed` (120) في فحصين متتاليين بلا رؤية اتصال بينهما، أو حين يتعذر الوصول إلى `nmcli` نفسه بعد استنفاد خطوة إعادة تشغيل NetworkManager؛ وأي حالة أخرى مقروءة تصفّر الساعة، والمرور السليم يمحو أدلة NetworkManager أيضاً، والجهاز المبلَّغ أنه غير متاح (الحالة 20: برنامج راديو متوقف، أو `rfkill`) لا يسلّحها أبداً. أصغر قيمة قانونية دقيقة واحدة ولا يمكن تعطيل المفتاح بقيمة؛ والقيمة الكبيرة جداً (حتى 9999999) تعطّل إعادة التشغيل عملياً.
+لا يجري الفحص إلا في نهاية إنعاش خاسر، فتقع إعادة التشغيل بين `REBOOT_AFTER_MIN` و`REBOOT_AFTER_MIN` زائد طول إنعاش واحد (الإنعاش هو الخطوة اللطيفة، وثلاث جولات من محاولات المرشحين المحدودة بـ `ASSOC_WAIT`، وخطوة إصلاح في كل جولة، ومحاولات الطوارئ والمفتوحة، وتوقفات 20 ثانية في الفروع الخارجية). يقع سطر `ERROR` في المخزون المؤقت لأن الشبكة معطلة، لكن نسخة المخزون على بطاقة الذاكرة (`${LOG_FILE}.spool`) تنجو من إعادة التشغيل: يضعها البدء التالي أمام أسطره حين يجد العلامة (`${LOG_FILE}.reboot`) بمعرّف إقلاع غير معرّفه، فيصل الانقطاع كله إلى الموقع بالترتيب ثم سطر البدء ثم `starting after the reboot AWACS ordered at ...` مرة؛ وإن وجد الحارس نفسه بعد 60 ثانية في الإقلاع نفسه قال إن أمر `reboot` لم يُنفَّذ وحذف العلامة والنسخة. انقطاع الكهرباء لا يترك علامة. علامة "الراديو لا يسمع شيئاً" تعتمد على قاعدة المسوح الفارغة الثلاثة الثابتة (ليست مفتاحاً) وعلى `SCAN_TTL` الذي يحد كم تُصدَّق الصورة المخزنة. على صور NetworkManager لا تُسلَّح الساعة إلا حين تُقرأ حالة الجهاز `disconnected` (30) أو `failed` (120) في فحصين متتاليين بلا رؤية اتصال بينهما، أو حين يتعذر الوصول إلى `nmcli` نفسه بعد استنفاد خطوة إعادة تشغيل NetworkManager؛ وأي حالة أخرى مقروءة تصفّر الساعة، والمرور السليم يمحو أدلة NetworkManager أيضاً، والجهاز المبلَّغ أنه غير متاح (الحالة 20: برنامج راديو متوقف، أو `rfkill`) لا يسلّحها أبداً. أصغر قيمة قانونية دقيقة واحدة ولا يمكن تعطيل المفتاح بقيمة؛ والقيمة الكبيرة جداً (حتى 9999999) تعطّل إعادة التشغيل عملياً.
 
 أسطر السجل:
 
-- `[ERROR][${dd/mm HH:MM:SS}] wedged ${REBOOT_AFTER_MIN}min with networks visible — rebooting (repeats per streak until cured)`
-- `[ERROR][${dd/mm HH:MM:SS}] association refused - wrong password? (recovery continues, reboot stays off)`
-- `[INFO][${dd/mm HH:MM:SS}] outage looks external (round ${round}) — waiting, not rebooting`
-- `[INFO][${dd/mm HH:MM:SS}] NM is still trying - waiting it out`
-- سطر `INFO` الذي يُكتب حين يبلّغ NetworkManager أن الجهاز متصل بينما يفشل فحص الإنترنت، ويذكر رقم الجولة
-- `[WARN][${dd/mm HH:MM:SS}] radio heard nothing on ${count} scans in a row - previous results dropped`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] fault looks on the device: ${tell} - recovery follows` (قبل درجة الجولة، مرة لكل انقطاع لكل علامة؛ العلامة `${names} on the air but this device cannot join` أو `the radio hears no network at all` أو `the stored network list cannot be read` أو `the stored network list reads empty`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] reboot clock armed - the device reboots after ${HH:MM} unless the internet returns or the fault reads external` (أول ضبط للساعة في الانقطاع؛ الوقت لحظة الضبط زائد `REBOOT_AFTER_MIN` دقيقة بتوقيت `SITE_TZ`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] reboot clock cleared - NetworkManager picked the device up again` (على `nm`، حين يصفّر التقاطُ NetworkManager للجهاز ساعة كان ضبطها قد أُعلن)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [ERROR] rebooting now: wedged ${REBOOT_AFTER_MIN} min (${tell}) - reboot ${n} for this fault, the story continues after the boot` (قبل `reboot` مباشرة؛ العلامة `${names} on the air but this device cannot join` أو `the radio hears no network at all` أو `the stored network list reads empty`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] starting after the reboot AWACS ordered at ${yyyy-mm-dd HH:MM} - wedged ${REBOOT_AFTER_MIN} min (${tell}), ${n} recovery runs before it` (أول بدء بعد إعادة التشغيل، بعد سطر البدء)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [ERROR] the reboot AWACS ordered at ${yyyy-mm-dd HH:MM} did not happen - the reboot command failed, check the device` (بعد 60 ثانية في الإقلاع الذي كان يجب أن ينتهي)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [ERROR] association refused by ${SSID} - wrong password? (recovery continues, reboot stays off)` (الشبكات الرافضة بأسمائها؛ و`association refused - wrong password? (recovery continues, reboot stays off)` حين لا يُعرف اسم)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] outage looks external (round ${round}) — waiting, not rebooting` (على `nm` حين كان NetworkManager مشغولاً في بداية الجولة؛ وإلا يسمّي الحكم علامته: `outage looks external: the router answers, the fault is upstream (round ${round}) — waiting, not rebooting`، أو `outage looks external: ${SSID} linked but no internet, the fault is behind that network (round ${round}) — waiting, not rebooting`، أو `outage looks external: none of your ${n} stored networks is on the air, ${n} others heard (round ${round}) — waiting, not rebooting`؛ مرة لكل انقطاع لكل علامة، والجولات التالية تُعدّ)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] NM is still trying - waiting it out` (مرة لكل انقطاع؛ والجولات التالية تُعدّ)
+- سطر `INFO` الذي يُكتب حين يبلّغ NetworkManager أن الجهاز متصل بينما يفشل فحص الإنترنت، ويذكر رقم الجولة (مرة لكل انقطاع؛ والجولات التالية تُعدّ)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [ERROR] NetworkManager is not answering nmcli (exit 8) - stored networks cannot be tried until it is restarted (recover L3)` (أول خروج بالرمز 8 في السلسلة)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [ERROR] interface ${IF} has vanished - WiFi hardware or driver gone, rung L3 reloads the driver (a USB dongle needs replugging)` (بداية الإنعاش، لواجهة كانت حية في هذا التشغيل؛ مرة لكل انقطاع)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] repeated ${n} more times during the outage (last at ${HH:MM}): ${line}` (بعد `internet restored`، سطر لكل خطوة مكررة؛ وتُعدّ بالطريقة نفسها الدرجات وقائمة الطوارئ والمرشحون المرفوضون والأحكام)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] radio heard nothing on ${count} scans in a row - previous results dropped`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: measured mode, floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night (night ${NIGHT_START}-${NIGHT_END}), switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${minutes} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${n} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (جزء `reboot after ${REBOOT_AFTER_MIN} min wedged`)
 
 متى تغيّره: ارفعه (60 إلى 120) حين تكون إعادة التشغيل مكلفة (إقلاع طويل، أو حمل مرفق يفقد حالته) وأعطال الراديو التي تراها تزول عادةً خلال ساعة؛ واخفضه (15) على جهاز يُعرف عن شريحة الواي فاي فيه أنها تتجمد وإعادة التشغيل السريعة هي العلاج المقبول.
 
@@ -578,7 +692,7 @@ REBOOT_AFTER_MIN=60
 
 ستة مفاتيح تقرر متى يعدّ الحارس وصلته أبطأ من اللازم، وكيف يقيس، وما الذي يجب أن تقدمه شبكة أخرى قبل أن ينتقل إليها. تشترك المفاتيح الستة في قاعدة الفحص الرقمية وتُختم بعد التحميل. تُنسخ `MIN_UP_KBPS` و`SWITCH_GAIN_PCT` و`DANCE_COOLDOWN` إلى قيم عمل يبدّلها الوضع الليلي بين `NIGHT_START` و`NIGHT_END` حين يكون `NIGHT_MODE=yes` (الافتراضي؛ انظر [الوضع الليلي](#الوضع-الليلي))؛ فكل مقارنة في هذا القسم تقرأ قيمة العمل، و"الحد" يعني حد النهار أو الليل. أما `PROBE_KB` و`UP_STRIKES` و`STREAM_MIN_KBPS` فلا نظير ليلياً لها. هدف القياس هو `PROBE_URL` إن ضُبط وإلا `${SITE_URL}/${DEVICE_ID}/${SITE_API}`؛ وبدون الاثنين يكون الحارس في وضع الإشارة وتصبح المفاتيح الستة كلها بلا أثر: لا عيّنة بطيئة تُعد، ولا تحذير، ولا قياس، ولا تقييم؛ وتبقى أسطر `QA` التشخيصية تطبع التدفق.
 
-المسار في كل دورة: بعد فحص الإنترنت الناجح يأخذ الحارس عيّنة سلبية واحدة (قراءتان لـ `/sys/class/net/${IF}/statistics/tx_bytes` بفاصل 3 ثوانٍ، ويُحوَّل الفرق إلى كيلوبت/ث، بلا أي حركة)، وهي ما يقيسه كل مرور سليم وما تعرضه أسطر `QA` التشخيصية باسم `flow`، ويطبع سطر `DEBUG`، ويختبر العيّنة على نطاق: عادةً من 20 كيلوبت/ث إلى ما دون الحد، وأثناء بث مباشر من 5 كيلوبت/ث إلى ما دون `STREAM_MIN_KBPS`. العيّنة داخل النطاق عيّنة بطيئة واحدة تُعد في عدّاد مشترك؛ والعيّنة خارجه تصفّره. حين يبلغ العدّ `UP_STRIKES` وانقضت فترة التبريد منذ آخر تقييم، يصفّر الحارس العدّ ويسجّل لحظة البدء ويكتب التحذير، ثم يقيس الشبكة الحالية بقياس حقيقي؛ فإن كانت دون الحد بدأ التقييم بعتبة تساوي القياس مضروباً في النسبة مقسوماً على 100؛ وإلا وقف التحذير وحده واستُهلكت فترة التبريد ووصل الرقم المقيس إلى خانة الواي فاي في إرسالها التالي. التقييم: يتصل بكل شبكة مخزنة ظاهرة غير الحالية بترتيب قائمة الشبكات المخزنة (ارتباط وDHCP وفحص إنترنت؛ والمرشح بلا إنترنت يُتجاوز بلا قياس)، ويقيسه، ويسجّل `candidate [${id}] ${SSID} uploads at ${kbps} kbps`، ويحتفظ بالأسرع، ويتوقف مبكراً عند أربعة أمثال الحد. إن لم يبلغ الأفضل العتبة أو قاس 0 أعاد الاتصال بالشبكة الأصلية وسجّل `no challenger beat the incumbent - staying on ${SSID}`؛ وإلا اتصل بالأفضل وسجّل `connected: ${SSID} (upload ${best_kbps} kbps)`. وإن تعذرت العودة إلى الأصلية اتُّصل بالأفضل على أي حال. وإن فشل التقييم كله أعاد الحارس الوصلة إلى `wpa_supplicant` أو NetworkManager وقرر فحص الإنترنت في الدورة التالية. أثناء إنعاش فقد الإنترنت يجري التقييم نفسه بلا عتبة ولا شبكة أصلية، فتفوز أي شبكة تعمل. القياس الحقيقي لا يُرسل إلا في لحظات القرار: للشبكة الحالية حين ينطلق تقييم، ولكل شبكة مخزنة تُجرَّب أثناء تقييم أو إنعاش انقطاع، وعند الوصول بعد العودة إلى شبكة أعلى أولوية، ولأمر `awacs.sh speed`.
+المسار في كل دورة: بعد فحص الإنترنت الناجح يأخذ الحارس عيّنة سلبية واحدة (قراءتان لـ `/sys/class/net/${IF}/statistics/tx_bytes` بفاصل 3 ثوانٍ، ويُحوَّل الفرق إلى كيلوبت/ث، بلا أي حركة)، وهي ما يقيسه كل مرور سليم وما تعرضه أسطر `QA` التشخيصية باسم `flow`، ويطبع سطر `DEBUG`، ويختبر العيّنة على نطاق: عادةً من 20 كيلوبت/ث إلى ما دون الحد، وأثناء بث مباشر من 5 كيلوبت/ث إلى ما دون `STREAM_MIN_KBPS`. العيّنة داخل النطاق عيّنة بطيئة واحدة تُعد في عدّاد مشترك؛ والعيّنة خارجه تصفّره. حين يبلغ العدّ `UP_STRIKES` وانقضت فترة التبريد منذ آخر تقييم، يصفّر الحارس العدّ ويسجّل لحظة البدء ويكتب التحذير، ويسمّي ما يسمعه الراديو (`scan heard ${count} networks: ${SSID} ${dBm}, ... | known on the air: ${SSID}, ... | stored, not heard: ${SSID}, ...`، الأقوى أولاً، عشرة أسماء على الأكثر في كل جزء)، ثم يقيس الشبكة الحالية بقياس حقيقي؛ فإن كانت دون الحد سجّل `measured ${kbps} kbps on ${SSID} - under the ${floor} kbps floor, a challenger must beat ${bar} kbps` وبدأ التقييم بعتبة تساوي القياس مضروباً في النسبة مقسوماً على 100؛ وإلا سجّل `measured ${kbps} kbps on ${SSID} - above the ${floor} kbps floor, staying` واستُهلكت فترة التبريد ووصل الرقم المقيس إلى خانة الواي فاي في إرسالها التالي؛ والقياس الذي لم يقبله الهدف يُسجَّل `upload probe failed on ${SSID} - the probe target accepted nothing (site or endpoint down?), counting it as 0 kbps` ويُحسب صفراً. وحين تنضج العيّنات وفترة التبريد لم تنقضِ يقول ذلك سطر `upload still slow on ${SSID} (${flow} kbps, floor ${floor}) - evaluation on cooldown, next look in ${minutes} min` مرة في نافذة التبريد الواحدة. التقييم: يتصل بكل شبكة مخزنة ظاهرة غير الحالية بترتيب قائمة الشبكات المخزنة، معلناً `trying ${SSID}` (ارتباط وDHCP وفحص إنترنت؛ والمرشح الذي يفشل يُسجَّل `could not connect to ${SSID}: ${reason} - trying the next` ويُتجاوز بلا قياس)، ويقيسه، ويسجّل `candidate [${id}] ${SSID} uploads at ${kbps} kbps`، ويحتفظ بالأسرع، ويتوقف مبكراً عند أربعة أمثال الحد. إن لم يبلغ الأفضل العتبة أو قاس 0 أعاد الاتصال بالشبكة الأصلية وسجّل `no challenger beat the incumbent - staying on ${SSID} (best was ${SSID} at ${kbps} kbps, needed ${bar})`، أو `no other known network on the air - staying on ${SSID} at ${kbps} kbps` حين لم يكن مرشح غير البيت ظاهراً، أو `the only candidate did not deliver internet - staying on ${SSID} at ${kbps} kbps` و`none of the ${n} candidates delivered internet - staying on ${SSID} at ${kbps} kbps` حين لم يوصل مرشح؛ وإلا أعلن `switching to ${SSID} (${best_kbps} kbps against ${kbps} kbps here)` (ويُذيَّل بـ `- plainly fast, over 4x the ${floor} kbps floor, probing stopped at it` حين أنهى مرشح القياس مبكراً) واتصل بالأفضل وسجّل `switched to ${SSID} (upload ${best_kbps} kbps)`. والتبديل الذي يفشل يُسجَّل `switching to ${SSID} failed: ${reason} - going back to ${home}`، يتبعه `back on ${home}` أو `could not return to ${home}: ${reason}`. وإن تعذرت العودة إلى الأصلية بعد مقارنة خاسرة (`could not return to ${SSID}: ${reason}`، أو `back on ${SSID} - linked but still no internet` حين قامت الوصلة بلا إنترنت) اتُّصل بالأفضل على أي حال بسطر `switching to ${SSID} (${best_kbps} kbps, below the ${bar} kbps bar) - the best left, ${home}: ${reason}`. وإن فشل التقييم كله أعاد الحارس الوصلة إلى `wpa_supplicant` أو NetworkManager، وسجّل `evaluation ended with no working network - on ${SSID} now, the next check decides and recovery follows if the internet is gone`، وقرر فحص الإنترنت في الدورة التالية. أثناء إنعاش فقد الإنترنت يجري التقييم نفسه بلا عتبة ولا شبكة أصلية، فتفوز أي شبكة تعمل؛ وإعلانه هناك `switching to ${SSID} (${best_kbps} kbps, the fastest candidate)`، أو `switching to ${SSID} (${best_kbps} kbps) - it delivered internet, ${home}: ${reason}` حين فشلت العودة إلى الشبكة المتذكّرة، والتبديل الفاشل `switching to ${SSID} failed: ${reason}`. والسبب واحد من: `never associated` أو `associated but got no address` أو `refused - wrong password?` أو `not found on the air` أو `timed out after ${ASSOC_WAIT} s` أو `NetworkManager not answering` أو `NetworkManager: ${message}` أو `linked but no internet`. القياس الحقيقي لا يُرسل إلا في لحظات القرار: للشبكة الحالية حين ينطلق تقييم، ولكل شبكة مخزنة تُجرَّب أثناء تقييم أو إنعاش انقطاع، وعند الوصول بعد العودة إلى شبكة أعلى أولوية، ولأمر `awacs.sh speed`.
 
 ### PROBE_KB
 
@@ -594,9 +708,12 @@ REBOOT_AFTER_MIN=60
 
 أسطر السجل:
 
-- `[INFO][${dd/mm HH:MM:SS}] candidate [${id}] ${SSID} uploads at ${kbps} kbps`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] measured ${kbps} kbps on ${SSID} - under the ${floor} kbps floor, a challenger must beat ${bar} kbps`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] measured ${kbps} kbps on ${SSID} - above the ${floor} kbps floor, staying`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] candidate [${id}] ${SSID} uploads at ${kbps} kbps`
 - `${PROBE_KB}KB -> ${probe_url} ...` (قيمة الصف `probing` في شاشة `awacs.sh speed`)
 - `${kbps} kbps` أو `0 kbps — probe failed` (النصف الإنجليزي من قيمة الصف `upload` في الشاشة نفسها)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] upload probe failed on ${SSID} - the probe target accepted nothing (site or endpoint down?), counting it as 0 kbps` (بدل سطر القياس حين لم يقبل الهدف الجسم، لا عبر `curl` ولا عبر `wget`)
 
 متى تغيّره: ارفعه (500 إلى 1000) على وصلات سريعة ينتهي فيها 200 كيلوبايت في أقل من ثانية بكثير وتتقافز القراءات. اخفضه (50 إلى 100) على وصلات محدودة أو بطيئة جداً لتقليل البيانات التي يكلّفها كل قرار وإبقاء القياس داخل حد 15 ثانية.
 
@@ -624,11 +741,18 @@ PROBE_KB=500
 
 أسطر السجل:
 
-- `[DEBUG][${dd/mm HH:MM:SS}] QA: flow=${flow} kbps, strikes=${strikes}, profile=${day|night}`
-- `[WARN][${dd/mm HH:MM:SS}] sustained slow upload (${flow} kbps) - evaluating known networks`
-- `[WARN][${dd/mm HH:MM:SS}] preferred network too slow (${kbps} kbps) - benching it, going back`
-- `[OK][${dd/mm HH:MM:SS}] returned to preferred network: ${SSID} (upload ${kbps} kbps)`
-- `[INFO][${dd/mm HH:MM:SS}] day profile active (floor ${MIN_UP_KBPS} kbps)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] QA: flow=${flow} kbps, strikes=${strikes}, profile=${day|night}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] sustained slow upload on ${SSID} (${flow} kbps for ${UP_STRIKES} samples, floor ${floor}) - evaluating known networks`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] scan heard ${count} networks: ${SSID} ${dBm}, ... | known on the air: ${SSID}, ... | stored, not heard: ${SSID}, ...` (الأقوى أولاً، عشرة أسماء على الأكثر في كل جزء ثم `and ${n} more`؛ و`known on the air: none` حين لا تكون أي شبكة مخزنة في الهواء؛ و`stored, not heard: none` حين تكون كلها ظاهرة؛ و`scan heard 0 networks | known on the air: none | stored, not heard: ${SSID}, ...` حين لا يسمع الراديو شيئاً)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] measured ${kbps} kbps on ${SSID} - under the ${floor} kbps floor, a challenger must beat ${bar} kbps`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] measured ${kbps} kbps on ${SSID} - above the ${floor} kbps floor, staying`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] preferred network ${SSID} too slow (${kbps} kbps, floor ${floor}) - benched for ${minutes} min, going back to ${current}` (الدقائق ثلاثة أمثال فترة التبريد السارية: 60 نهاراً و120 ليلاً بالافتراضيات؛ ويُذيَّل بـ `, ends the bench on ${SSID}` حين ينهي إبعاداً جارياً لشبكة أخرى)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] preferred network ${SSID} too slow (${kbps} kbps, floor ${floor}) - benched for ${minutes} min, staying on it` (حين لا شبكة يُرجع إليها)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] returned to preferred network: ${SSID} (upload ${kbps} kbps)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] day profile active until ${NIGHT_START} - floor ${MIN_UP_KBPS} kbps, a challenger must reach ${SWITCH_GAIN_PCT}% of the incumbent, evaluations ${minutes} min apart`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] upload still slow on ${SSID} (${flow} kbps, floor ${floor}) - evaluation on cooldown, next look in ${minutes} min` (العيّنات نضجت وفترة التبريد لم تنقضِ؛ مرة في نافذة التبريد الواحدة)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] no other known network on the air - staying on ${SSID} at ${kbps} kbps` (تقييم بلا مرشح ظاهر غير البيت)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: measured mode, floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night (night ${NIGHT_START}-${NIGHT_END}), switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${minutes} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${n} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (جزء `floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night`)
 
 متى تغيّره: اضبطه على معدل الرفع الذي يحتاجه الحمل فعلاً (معدل البث زائد هامش). الأعلى من أن تبلغه الوصلة أبداً يعني قياساً وتقييماً في كل فترة تبريد بلا طائل، وكل منهما يُخرج الجهاز من شبكته؛ والأدنى من اللازم يعني ألا تُلاحظ وصلة تعاني أبداً.
 
@@ -656,8 +780,12 @@ MIN_UP_KBPS=250
 
 أسطر السجل:
 
-- `[DEBUG][${dd/mm HH:MM:SS}] QA: flow=${flow} kbps, strikes=${strikes}, profile=${day|night}`
-- `[DEBUG][${dd/mm HH:MM:SS}] QA(stream): flow=${flow} kbps, strikes=${strikes}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] QA: flow=${flow} kbps, strikes=${strikes}, profile=${day|night}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] QA(stream): flow=${flow} kbps, strikes=${strikes}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] sustained slow upload on ${SSID} (${flow} kbps for ${UP_STRIKES} samples, floor ${floor}) - evaluating known networks` (العدد في السطر هو هذا المفتاح)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] live stream starving on ${SSID} (${flow} kbps for ${UP_STRIKES} samples, floor ${STREAM_MIN_KBPS}) - evaluating known networks`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] upload still slow on ${SSID} (${flow} kbps, floor ${floor}) - evaluation on cooldown, next look in ${minutes} min` (العيّنات نضجت وفترة التبريد لم تنقضِ)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] live stream still starving on ${SSID} (${flow} kbps, floor ${STREAM_MIN_KBPS}) - evaluation on cooldown, next look in ${minutes} min`
 
 متى تغيّره: ارفعه (5 إلى 6) على وصلات ذات حركة متقطعة تكون فيها الهبطات القصيرة طبيعية وكانت تطلق تقييمات. اخفضه إلى 2 حين يكون الحمل حرجاً زمنياً ويجب ترك الوصلة السيئة بسرعة. القيمة 1 تعني أن قراءة بطيئة واحدة تكفي.
 
@@ -685,9 +813,24 @@ UP_STRIKES=5
 
 أسطر السجل:
 
-- `[INFO][${dd/mm HH:MM:SS}] candidate [${id}] ${SSID} uploads at ${kbps} kbps`
-- `[OK][${dd/mm HH:MM:SS}] no challenger beat the incumbent - staying on ${SSID}`
-- `[OK][${dd/mm HH:MM:SS}] connected: ${SSID} (upload ${best_kbps} kbps)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] trying ${SSID}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] could not connect to ${SSID}: ${reason} - trying the next` (السبب `never associated` أو `associated but got no address` أو `refused - wrong password?` أو `not found on the air` أو `timed out after ${ASSOC_WAIT} s` أو `NetworkManager not answering` أو `NetworkManager: ${message}` أو `linked but no internet`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] candidate [${id}] ${SSID} uploads at ${kbps} kbps`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] no challenger beat the incumbent - staying on ${SSID} (best was ${SSID} at ${kbps} kbps, needed ${bar})`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] could not return to ${SSID}: ${reason}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] switching to ${SSID} (${best_kbps} kbps against ${kbps} kbps here)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] switched to ${SSID} (upload ${best_kbps} kbps)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] switching to ${SSID} failed: ${reason} - going back to ${home}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] back on ${SSID}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] measured ${kbps} kbps on ${SSID} - under the ${floor} kbps floor, a challenger must beat ${bar} kbps` (`${bar}` هو القياس مضروباً في هذا المفتاح مقسوماً على 100)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] switching to ${SSID} (${best_kbps} kbps against ${kbps} kbps here) - plainly fast, over 4x the ${floor} kbps floor, probing stopped at it` (المرشح الذي أنهى القياس مبكراً)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] switching to ${SSID} (${best_kbps} kbps, below the ${bar} kbps bar) - the best left, ${home}: ${reason}` (خسر المقارنة وفشل الرجوع إلى البيت فأُخذ على أي حال)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] no other known network on the air - staying on ${SSID} at ${kbps} kbps` (لا مرشح غير البيت)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] the only candidate did not deliver internet - staying on ${SSID} at ${kbps} kbps`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] none of the ${n} candidates delivered internet - staying on ${SSID} at ${kbps} kbps`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] back on ${SSID} - linked but still no internet` (الرجوع قام بلا إنترنت)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] evaluation ended with no working network - on ${SSID|nothing} now, the next check decides and recovery follows if the internet is gone` (فشل التبديل والرجوع معاً)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] day profile active until ${NIGHT_START} - floor ${MIN_UP_KBPS} kbps, a challenger must reach ${SWITCH_GAIN_PCT}% of the incumbent, evaluations ${minutes} min apart` (جزء `a challenger must reach ${SWITCH_GAIN_PCT}% of the incumbent`)
 
 متى تغيّره: ارفعه (200 إلى 300) حين يتقلب الجهاز بين شبكتين متقاربتي السرعة. اخفضه نحو 120 فقط حين يستحق الربح المتواضع اضطراب التبديل.
 
@@ -711,13 +854,18 @@ SWITCH_GAIN_PCT=200
 
 أقل زمن بين تقييمين. كل تقييم يُخرج الجهاز من شبكته ليختبر غيرها، فالتقييمات مقنَّنة. لحظة انطلاق التقييم يُخزَّن الوقت الحالي، قبل القياس الأساسي؛ فالتقييم الذي ينتهي بالبقاء، أو الذي لا يكون قياسه الأساسي دون الحد فلا يغادر الشبكة أصلاً، يستهلك فترة التبريد مع ذلك. يحتاج التقييم التالي عيّنات بطيئة كافية وهذا العدد من الثواني منذ السابق معاً. يبدأ الوقت المخزَّن من 0، فأول تقييم بعد بدء الحارس لا يتأخر. تحدد القيمة نفسها أيضاً كم تُبعَد شبكة أعلى أولوية قيست بطيئة عند العودة إليها: ثلاثة أمثال فترة التبريد السارية في تلك اللحظة، ولا تختارها نظرة الشبكة المفضلة خلالها.
 
-ليلاً يحل `NIGHT_DANCE_COOLDOWN` (2400 افتراضياً) محله عبر قيمة العمل؛ ويُقارن الزمن المنقضي بالقيمة السارية لحظة الفحص. تستمر العيّنات البطيئة في العدّ أثناء التبريد، فينطلق التقييم مع أول عيّنة بطيئة بعد انقضائه. لا تُتذكَّر إلا شبكة مُبعَدة واحدة؛ والعودة البطيئة الأحدث تحل محلها. بلا أثر في وضع الإشارة (لا تقييمات ولا إبعاد).
+ليلاً يحل `NIGHT_DANCE_COOLDOWN` (2400 افتراضياً) محله عبر قيمة العمل؛ ويُقارن الزمن المنقضي بالقيمة السارية لحظة الفحص. تستمر العيّنات البطيئة في العدّ أثناء التبريد، فينطلق التقييم مع أول عيّنة بطيئة بعد انقضائه؛ والعيّنات التي تنضج أثناءه تُقال مرة في نافذة التبريد الواحدة بسطر `INFO` يذكر الدقائق الباقية، ولا يُكتب قبل أول تقييم لأن لا نافذة مفتوحة. لا تُتذكَّر إلا شبكة مُبعَدة واحدة؛ والعودة البطيئة الأحدث تحل محلها. بلا أثر في وضع الإشارة (لا تقييمات ولا إبعاد).
 
 أسطر السجل:
 
-- `[WARN][${dd/mm HH:MM:SS}] sustained slow upload (${flow} kbps) - evaluating known networks`
-- `[WARN][${dd/mm HH:MM:SS}] live stream starving (${flow} kbps) - evaluating known networks`
-- `[WARN][${dd/mm HH:MM:SS}] preferred network too slow (${kbps} kbps) - benching it, going back`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] sustained slow upload on ${SSID} (${flow} kbps for ${UP_STRIKES} samples, floor ${floor}) - evaluating known networks`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] live stream starving on ${SSID} (${flow} kbps for ${UP_STRIKES} samples, floor ${STREAM_MIN_KBPS}) - evaluating known networks`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] preferred network ${SSID} too slow (${kbps} kbps, floor ${floor}) - benched for ${minutes} min, going back to ${current}` (الدقائق ثلاثة أمثال فترة التبريد السارية: 60 نهاراً و120 ليلاً بالافتراضيات؛ ويُذيَّل بـ `, ends the bench on ${SSID}` حين ينهي إبعاداً جارياً لشبكة أخرى)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] preferred network ${SSID} too slow (${kbps} kbps, floor ${floor}) - benched for ${minutes} min, staying on it` (حين لا شبكة يُرجع إليها)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] upload still slow on ${SSID} (${flow} kbps, floor ${floor}) - evaluation on cooldown, next look in ${minutes} min` (مرة في نافذة التبريد الواحدة؛ الدقائق الباقية مقرَّبة إلى الأعلى)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] live stream still starving on ${SSID} (${flow} kbps, floor ${STREAM_MIN_KBPS}) - evaluation on cooldown, next look in ${minutes} min`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] day profile active until ${NIGHT_START} - floor ${MIN_UP_KBPS} kbps, a challenger must reach ${SWITCH_GAIN_PCT}% of the incumbent, evaluations ${minutes} min apart` (`${minutes}` هنا هذا المفتاح مقرَّباً إلى الأعلى)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: measured mode, floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night (night ${NIGHT_START}-${NIGHT_END}), switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${minutes} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${n} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (جزء `one evaluation per ${minutes} min`؛ ومدة الإبعاد في سطر `benched for ${minutes} min` ثلاثة أمثاله)
 
 متى تغيّره: ارفعه (3600 فأكثر) حين يكون أي انقطاع مكلفاً ومجموعة الشبكات القريبة نادراً ما تتغير. اخفضه (600) حين تأتي الشبكات وتذهب بسرعة، كمركبة متحركة أو نقاط اتصال متناوبة.
 
@@ -745,8 +893,12 @@ DANCE_COOLDOWN=1800
 
 أسطر السجل:
 
-- `[DEBUG][${dd/mm HH:MM:SS}] QA(stream): flow=${flow} kbps, strikes=${strikes}`
-- `[WARN][${dd/mm HH:MM:SS}] live stream starving (${flow} kbps) - evaluating known networks`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] QA(stream): flow=${flow} kbps, strikes=${strikes}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] live stream starving on ${SSID} (${flow} kbps for ${UP_STRIKES} samples, floor ${STREAM_MIN_KBPS}) - evaluating known networks`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] scan heard ${count} networks: ${SSID} ${dBm}, ... | known on the air: ${SSID}, ... | stored, not heard: ${SSID}, ...` (الأقوى أولاً، عشرة أسماء على الأكثر في كل جزء ثم `and ${n} more`؛ و`known on the air: none` حين لا تكون أي شبكة مخزنة في الهواء؛ و`stored, not heard: none` حين تكون كلها ظاهرة؛ و`scan heard 0 networks | known on the air: none | stored, not heard: ${SSID}, ...` حين لا يسمع الراديو شيئاً)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] measured ${kbps} kbps on ${SSID} - under the ${floor} kbps floor, a challenger must beat ${bar} kbps`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] measured ${kbps} kbps on ${SSID} - above the ${floor} kbps floor, staying`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] live stream still starving on ${SSID} (${flow} kbps, floor ${STREAM_MIN_KBPS}) - evaluation on cooldown, next look in ${minutes} min` (العيّنات نضجت تحت البث وفترة التبريد لم تنقضِ)
 
 متى تغيّره: اضبطه على نحو نصف أدنى معدل ينتجه البث. ارفعه إن تلعثم البث بوضوح بينما يصمت الحارس؛ واخفضه إن حذّر الحارس من التعطش أثناء تغذية منخفضة الجودة يراها المشاهدون مقبولة.
 
@@ -778,9 +930,10 @@ STREAM_MIN_KBPS=120
 
 أسطر السجل:
 
-- `[INFO][${dd/mm HH:MM:SS}] night profile active (floor ${NIGHT_MIN_UP_KBPS} kbps)`
-- `[INFO][${dd/mm HH:MM:SS}] day profile active (floor ${MIN_UP_KBPS} kbps)`
-- `[DEBUG][${dd/mm HH:MM:SS}] QA: flow=${flow} kbps, strikes=${strikes}, profile=${day|night}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] night profile active until ${NIGHT_END} - floor ${NIGHT_MIN_UP_KBPS} kbps, a challenger must reach ${NIGHT_GAIN_PCT}% of the incumbent, evaluations ${minutes} min apart`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] day profile active until ${NIGHT_START} - floor ${MIN_UP_KBPS} kbps, a challenger must reach ${SWITCH_GAIN_PCT}% of the incumbent, evaluations ${minutes} min apart`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] QA: flow=${flow} kbps, strikes=${strikes}, profile=${day|night}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: measured mode, floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night (night ${NIGHT_START}-${NIGHT_END}), switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${minutes} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${n} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (جزء الحد يقرأ `(night ${NIGHT_START}-${NIGHT_END})` مع `yes` و`floor ${MIN_UP_KBPS} kbps (night profile off)` بدونه)
 
 متى تغيّره: اضبطه على `no` حين تُشاهد التغذية على مدار الساعة وتريد الصرامة نفسها في كل ساعة، أو حين تكون ساعة الجهاز غير موثوقة (بلا مزامنة وقت) ويكون وضع بساعة خاطئة أسوأ من لا وضع. اتركه `yes` لكاميرا ينام مشاهدوها ليلاً.
 
@@ -798,7 +951,7 @@ NIGHT_MODE="no"
 
 الافتراضي: `"22:00"`
 
-المسموح: `HH:MM` على ساعة 24: ساعة من 0 إلى 23 برقم أو رقمين (`6:00` و`06:00` كلاهما يمر)، ودقائق من 00 إلى 59 برقمين بالضبط، ونقطتان واحدتان، ولا شيء آخر (لا ثوانٍ، ولا `24:00`، ولا ساعة وحدها، ولا مسافات). القيمة المشوهة أو الفارغة تعود بصمت إلى `22:00`. يُفحص `NIGHT_END` على حدة، فالخطأ في أحدهما لا يعيد الآخر.
+المسموح: `HH:MM` على ساعة 24: ساعة من 0 إلى 23 برقم أو رقمين (`6:00` و`06:00` كلاهما يمر)، ودقائق من 00 إلى 59 برقمين بالضبط، ونقطتان واحدتان، ولا شيء آخر (لا ثوانٍ، ولا `24:00`، ولا ساعة وحدها، ولا مسافات). القيمة المشوهة أو الفارغة تعود إلى `22:00` ويُسمّى المفتاح في سطر المفاتيح الساقطة عند البدء. يُفحص `NIGHT_END` على حدة، فالخطأ في أحدهما لا يعيد الآخر.
 
 الوحدة: وقت `HH:MM` بتوقيت الجهاز المحلي
 
@@ -808,7 +961,7 @@ NIGHT_MODE="no"
 
 أسطر السجل:
 
-- `[INFO][${dd/mm HH:MM:SS}] night profile active (floor ${NIGHT_MIN_UP_KBPS} kbps)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] night profile active until ${NIGHT_END} - floor ${NIGHT_MIN_UP_KBPS} kbps, a challenger must reach ${NIGHT_GAIN_PCT}% of the incumbent, evaluations ${minutes} min apart`
 
 متى تغيّره: أخّره حين يبقى البيت أو المحل نشطاً إلى وقت متأخر من المساء، وقدّمه حين تتوقف المشاهدة مبكراً. استعمل بداية بعد النهاية لعبور منتصف الليل، وبداية قبل النهاية لنافذة داخل يوم واحد.
 
@@ -826,7 +979,7 @@ NIGHT_START="23:30"
 
 الافتراضي: `"06:00"`
 
-المسموح: الشكل نفسه كـ `NIGHT_START`: `HH:MM`، ساعة من 0 إلى 23 برقم أو رقمين، ودقائق من 00 إلى 59 برقمين. القيمة المشوهة أو الفارغة تعود بصمت إلى `06:00`.
+المسموح: الشكل نفسه كـ `NIGHT_START`: `HH:MM`، ساعة من 0 إلى 23 برقم أو رقمين، ودقائق من 00 إلى 59 برقمين. القيمة المشوهة أو الفارغة تعود إلى `06:00` ويُسمّى المفتاح في سطر المفاتيح الساقطة عند البدء.
 
 الوحدة: وقت `HH:MM` بتوقيت الجهاز المحلي
 
@@ -836,7 +989,7 @@ NIGHT_START="23:30"
 
 أسطر السجل:
 
-- `[INFO][${dd/mm HH:MM:SS}] day profile active (floor ${MIN_UP_KBPS} kbps)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] day profile active until ${NIGHT_START} - floor ${MIN_UP_KBPS} kbps, a challenger must reach ${SWITCH_GAIN_PCT}% of the incumbent, evaluations ${minutes} min apart`
 
 متى تغيّره: اضبطه على الساعة التي يعود فيها الناس إلى المشاهدة. إن أردت القواعد المخففة طوال اليوم فلا تضبط البداية مساوية للنهاية (فذلك يعطّل الليل)، بل اخفض مفاتيح النهار نفسها.
 
@@ -854,7 +1007,7 @@ NIGHT_END="07:00"
 
 الافتراضي: `200`
 
-المسموح: عدد صحيح من 1 إلى 9999999 (الأصفار البادئة تُحذف، فـ `0200` تصبح 200). الصفر أو السالب أو الكسر أو الفارغ أو غير الرقمي يعود بصمت إلى 200. مع حد 20 فأقل لا يستطيع الفحص السلبي (بلا بث) عدّ عيّنة بطيئة أبداً، لأنه لا ينظر إلا في حركة 20 كيلوبت/ث فأعلى؛ وعندها لا تنطلق مقارنتا الرفع المقيس (بعد بث متعطش، وعند العودة إلى شبكة أعلى أولوية) إلا حين يقيس القياس دون ذلك الرقم الضئيل، أي عملياً حين يفشل ويعيد 0.
+المسموح: عدد صحيح من 1 إلى 9999999 (الأصفار البادئة تُحذف، فـ `0200` تصبح 200). الصفر أو السالب أو الكسر أو الفارغ أو غير الرقمي يعود إلى 200 ويُسمّى المفتاح في سطر المفاتيح الساقطة عند البدء. مع حد 20 فأقل لا يستطيع الفحص السلبي (بلا بث) عدّ عيّنة بطيئة أبداً، لأنه لا ينظر إلا في حركة 20 كيلوبت/ث فأعلى؛ وعندها لا تنطلق مقارنتا الرفع المقيس (بعد بث متعطش، وعند العودة إلى شبكة أعلى أولوية) إلا حين يقيس القياس دون ذلك الرقم الضئيل، أي عملياً حين يفشل ويعيد 0.
 
 الوحدة: كيلوبت/ث من الرفع
 
@@ -864,10 +1017,14 @@ NIGHT_END="07:00"
 
 أسطر السجل:
 
-- `[INFO][${dd/mm HH:MM:SS}] night profile active (floor ${NIGHT_MIN_UP_KBPS} kbps)`
-- `[WARN][${dd/mm HH:MM:SS}] sustained slow upload (${flow} kbps) - evaluating known networks`
-- `[WARN][${dd/mm HH:MM:SS}] preferred network too slow (${kbps} kbps) - benching it, going back`
-- `[INFO][${dd/mm HH:MM:SS}] candidate [${id}] ${SSID} uploads at ${kbps} kbps`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] night profile active until ${NIGHT_END} - floor ${NIGHT_MIN_UP_KBPS} kbps, a challenger must reach ${NIGHT_GAIN_PCT}% of the incumbent, evaluations ${minutes} min apart`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] sustained slow upload on ${SSID} (${flow} kbps for ${UP_STRIKES} samples, floor ${floor}) - evaluating known networks`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] scan heard ${count} networks: ${SSID} ${dBm}, ... | known on the air: ${SSID}, ... | stored, not heard: ${SSID}, ...` (الأقوى أولاً، عشرة أسماء على الأكثر في كل جزء ثم `and ${n} more`؛ و`known on the air: none` حين لا تكون أي شبكة مخزنة في الهواء؛ و`stored, not heard: none` حين تكون كلها ظاهرة؛ و`scan heard 0 networks | known on the air: none | stored, not heard: ${SSID}, ...` حين لا يسمع الراديو شيئاً)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] measured ${kbps} kbps on ${SSID} - under the ${floor} kbps floor, a challenger must beat ${bar} kbps`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] measured ${kbps} kbps on ${SSID} - above the ${floor} kbps floor, staying`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] preferred network ${SSID} too slow (${kbps} kbps, floor ${floor}) - benched for ${minutes} min, going back to ${current}` (الدقائق ثلاثة أمثال فترة التبريد السارية: 60 نهاراً و120 ليلاً بالافتراضيات؛ ويُذيَّل بـ `, ends the bench on ${SSID}` حين ينهي إبعاداً جارياً لشبكة أخرى)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] preferred network ${SSID} too slow (${kbps} kbps, floor ${floor}) - benched for ${minutes} min, staying on it` (حين لا شبكة يُرجع إليها)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] candidate [${id}] ${SSID} uploads at ${kbps} kbps`
 
 متى تغيّره: اخفضه حين تكون تغذية الليل صغيرة (بث ليلي منخفض الجودة يحتاج أقل بكثير من تغذية النهار) وتفضّل البقاء على وصلة بطيئة مستقرة على مطاردة أسرع منها. ارفعه نحو قيمة النهار إن كانت رفعات الليل بثقل رفعات النهار.
 
@@ -885,7 +1042,7 @@ NIGHT_MIN_UP_KBPS=100
 
 الافتراضي: `300`
 
-المسموح: عدد صحيح من 1 إلى 9999999 (الأصفار البادئة تُحذف). ما عداه يعود بصمت إلى 300. القيم دون 100 يقبلها الفحص لكنها تسمح لشبكة أبطأ بأن تحل محل الحالية.
+المسموح: عدد صحيح من 1 إلى 9999999 (الأصفار البادئة تُحذف). ما عداه يعود إلى 300 ويُسمّى المفتاح عند البدء. القيم دون 100 يقبلها الفحص لكنها تسمح لشبكة أبطأ بأن تحل محل الحالية.
 
 الوحدة: بالمئة من سرعة الرفع المقيسة للشبكة الحالية
 
@@ -895,8 +1052,14 @@ NIGHT_MIN_UP_KBPS=100
 
 أسطر السجل:
 
-- `[OK][${dd/mm HH:MM:SS}] no challenger beat the incumbent - staying on ${SSID}`
-- `[OK][${dd/mm HH:MM:SS}] connected: ${SSID} (upload ${best_kbps} kbps)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] no challenger beat the incumbent - staying on ${SSID} (best was ${SSID} at ${kbps} kbps, needed ${bar})`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] could not return to ${SSID}: ${reason}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] switching to ${SSID} (${best_kbps} kbps against ${kbps} kbps here)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] switched to ${SSID} (upload ${best_kbps} kbps)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] switching to ${SSID} failed: ${reason} - going back to ${home}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] back on ${SSID}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] measured ${kbps} kbps on ${SSID} - under the ${floor} kbps floor, a challenger must beat ${bar} kbps` (`${bar}` هو القياس مضروباً في هذا المفتاح مقسوماً على 100 ليلاً)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] night profile active until ${NIGHT_END} - floor ${NIGHT_MIN_UP_KBPS} kbps, a challenger must reach ${NIGHT_GAIN_PCT}% of the incumbent, evaluations ${minutes} min apart` (جزء `a challenger must reach ${NIGHT_GAIN_PCT}% of the incumbent`)
 
 متى تغيّره: ارفعه حين كانت التبديلات الليلية تحدث لمكاسب هامشية؛ واخفضه (نحو قيمة النهار) حين تكون وصلة الليل سيئة فعلاً ويجب السماح لشبكة أفضل باعتدال بأن تتولى.
 
@@ -914,7 +1077,7 @@ NIGHT_GAIN_PCT=200
 
 الافتراضي: `2400`
 
-المسموح: عدد صحيح من 1 إلى 9999999 (الأصفار البادئة تُحذف). ما عداه يعود بصمت إلى 2400.
+المسموح: عدد صحيح من 1 إلى 9999999 (الأصفار البادئة تُحذف). ما عداه يعود إلى 2400 ويُسمّى المفتاح عند البدء.
 
 الوحدة: ثانية
 
@@ -924,9 +1087,13 @@ NIGHT_GAIN_PCT=200
 
 أسطر السجل:
 
-- `[WARN][${dd/mm HH:MM:SS}] sustained slow upload (${flow} kbps) - evaluating known networks`
-- `[WARN][${dd/mm HH:MM:SS}] live stream starving (${flow} kbps) - evaluating known networks`
-- `[WARN][${dd/mm HH:MM:SS}] preferred network too slow (${kbps} kbps) - benching it, going back`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] sustained slow upload on ${SSID} (${flow} kbps for ${UP_STRIKES} samples, floor ${floor}) - evaluating known networks`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] live stream starving on ${SSID} (${flow} kbps for ${UP_STRIKES} samples, floor ${STREAM_MIN_KBPS}) - evaluating known networks`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] preferred network ${SSID} too slow (${kbps} kbps, floor ${floor}) - benched for ${minutes} min, going back to ${current}` (الدقائق ثلاثة أمثال فترة التبريد السارية: 60 نهاراً و120 ليلاً بالافتراضيات؛ ويُذيَّل بـ `, ends the bench on ${SSID}` حين ينهي إبعاداً جارياً لشبكة أخرى)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] preferred network ${SSID} too slow (${kbps} kbps, floor ${floor}) - benched for ${minutes} min, staying on it` (حين لا شبكة يُرجع إليها)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] upload still slow on ${SSID} (${flow} kbps, floor ${floor}) - evaluation on cooldown, next look in ${minutes} min` (مرة في نافذة التبريد الواحدة؛ الدقائق الباقية من هذا المفتاح ليلاً)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] live stream still starving on ${SSID} (${flow} kbps, floor ${STREAM_MIN_KBPS}) - evaluation on cooldown, next look in ${minutes} min`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] night profile active until ${NIGHT_END} - floor ${NIGHT_MIN_UP_KBPS} kbps, a challenger must reach ${NIGHT_GAIN_PCT}% of the incumbent, evaluations ${minutes} min apart` (`${minutes}` هنا هذا المفتاح مقرَّباً إلى الأعلى؛ ومدة الإبعاد في `benched for ${minutes} min` ثلاثة أمثاله، 120 بالافتراضي)
 
 متى تغيّره: ارفعه حين تزعج التقييمات الليلية التسجيلات أو البث والوصلة بطيئة هامشياً فقط؛ واخفضه حين يجب إعادة فحص وصلة ليلية بطيئة أبكر.
 
@@ -944,7 +1111,7 @@ NIGHT_DANCE_COOLDOWN=3600
 
 المفاتيح الثلاثة لا تمر بكتلة الفحص: يُختبر كل منها مرة واحدة، بالكلمة `yes` بالضبط، في موضع استعماله؛ فالخطأ الإملائي أو أي تهجئة أخرى لـ `yes` يعني التعطيل بصمت بلا بديل ولا تحذير. القالب يكتب `"yes" | "no"`، لكن `yes` وحدها هي المعترف بها.
 
-ترتيب الإنعاش الذي يقرر متى تدخل الشبكات المفتوحة: يبدأ الإنعاش عند الإقلاع بلا إنترنت أو بعد `NET_FAIL_TICKS` دورات متتالية بلا إنترنت، ويُعلن الثاني بـ `internet lost on ${IF} - engaging`. يُسقط أولاً أي مدخل مؤقت متبقٍ من المحاولة السابقة، ثم يفتح بلطف (إعادة ارتباط وانتظار)، ثم يجري حتى ثلاث جولات. في كل جولة تُجرَّب الشبكات المخزنة أولاً ما لم يكن NetworkManager نفسه في منتصف اتصال، ثم يقرر التشخيص: أدلة العطل في الجهاز نفسه (البوابة لا تجيب، ولا ارتباط ناجح في هذه الجولة، ومعها شبكة مخزنة ظاهرة أو مسح فارغ أو قائمة مخزنة فارغة) تشغّل خطوة إصلاح الجولة ثم شبكات الطوارئ فالمفتوحة؛ وإلا يُسمّى الانقطاع خارجياً (`outage looks external (round ${round}) — waiting, not rebooting`) وتُجرَّب شبكات الطوارئ فالمفتوحة قبل انتظار 20 ثانية. على NetworkManager، داخل فرع العطل في الجهاز، يجعل مدير الشبكة الذي ما زال يفعّل الجولةَ تنتظر 20 ثانية وتتابع بلا محاولة طوارئ أو مفتوحة؛ ومدير الشبكة الذي يبلّغ اتصالاً بلا إنترنت يتخطى خطوة الإصلاح ويذهب مباشرة إلى شبكات الطوارئ فالمفتوحة. الاتصال الناجح بشبكة مفتوحة أو طوارئ داخل محاولة بدأت من دورة يتبعه سطر الحلقة الرئيسية `internet restored: ${SSID}`؛ والفوز داخل محاولة الإقلاع لا يطبع سطراً كهذا. وفي الإنعاش الأول من الانقطاع تُتخطى إعادة الارتباط ما دامت البوابة ترد؛ والمحاولة الفاشلة على شبكة طوارئ أو شبكة مفتوحة يتبعها رجوع إلى الشبكة التي بدأ عليها الإنعاش وإعادة تفعيل كل الشبكات المخزنة قبل انتظار الجولة.
+ترتيب الإنعاش الذي يقرر متى تدخل الشبكات المفتوحة: يبدأ الإنعاش عند الإقلاع بلا إنترنت أو بعد `NET_FAIL_TICKS` دورات متتالية بلا إنترنت، ويُعلن الأول بـ `no internet at start on ${SSID} - router ${still answers|silent too|none (not associated)}, engaging` والثاني بـ `internet lost on ${SSID} - router ${still answers|silent too|none (not associated)}, engaging`. يُسقط أولاً أي مدخل مؤقت متبقٍ من المحاولة السابقة، ثم يفتح بلطف (إعادة ارتباط وانتظار)، ثم يجري حتى ثلاث جولات. في كل جولة تُجرَّب الشبكات المخزنة أولاً ما لم يكن NetworkManager نفسه في منتصف اتصال، ثم يقرر التشخيص: أدلة العطل في الجهاز نفسه (البوابة لا تجيب، ولا ارتباط ناجح في هذه الجولة، ومعها شبكة مخزنة ظاهرة أو مسح فارغ أو قائمة مخزنة فارغة) تشغّل خطوة إصلاح الجولة ثم شبكات الطوارئ فالمفتوحة؛ وإلا يُسمّى الانقطاع خارجياً بعلامته (`outage looks external: the router answers, the fault is upstream (round ${round}) — waiting, not rebooting` وأخواته) وتُجرَّب شبكات الطوارئ فالمفتوحة قبل انتظار 20 ثانية. على NetworkManager، داخل فرع العطل في الجهاز، يجعل مدير الشبكة الذي ما زال يفعّل الجولةَ تنتظر 20 ثانية وتتابع بلا محاولة طوارئ أو مفتوحة؛ ومدير الشبكة الذي يبلّغ اتصالاً بلا إنترنت يتخطى خطوة الإصلاح ويذهب مباشرة إلى شبكات الطوارئ فالمفتوحة. الاتصال الناجح بشبكة مفتوحة أو طوارئ داخل الإنعاش يتبعه سطر الحلقة الرئيسية `internet restored: ${SSID} - down ${duration}, ${n} recovery runs` في أول دورة صحيحة، ومنه إنعاش الإقلاع. وفي الإنعاش الأول من الانقطاع تُتخطى إعادة الارتباط ما دامت البوابة ترد؛ والمحاولة الفاشلة على شبكة طوارئ أو شبكة مفتوحة يتبعها رجوع إلى الشبكة التي بدأ عليها الإنعاش وإعادة تفعيل كل الشبكات المخزنة قبل انتظار الجولة.
 
 ### OPEN_NETWORKS
 
@@ -954,16 +1121,22 @@ NIGHT_DANCE_COOLDOWN=3600
 
 الوحدة: مفتاح نعم/لا
 
-حين يفقد الجهاز الإنترنت ولا تعيده شبكاته المخزنة ولا شبكات الطوارئ في `SAFETY_NET`، يسمح هذا المفتاح للحارس بالانضمام إلى شبكة بلا كلمة سر يبثها أي أحد قريب. الشبكات المفتوحة هي الخطوة الأخيرة في كل جولة من جولات الإنعاش الثلاث على الأكثر، بالترتيب المذكور في مقدمة القسم: بعد الخطوة الأولى اللطيفة، وبعد الشبكات المخزنة، وبعد شبكات الطوارئ التي تلي خطوة إصلاح الجولة (للعطل في الجهاز نفسه) أو تلي التصنيف مباشرة (للانقطاع الخارجي). على صورة NetworkManager تنطبق حالتان خاصتان: حين يبلّغ NetworkManager اتصالاً بلا إنترنت تُتخطى خطوة الإصلاح وتُجرَّب شبكات الطوارئ فالمفتوحة مباشرة؛ وحين يوجد NetworkManager في منتصف تفعيل بعد جمع أدلة العطل في الجهاز نفسه تنتظر الجولة 20 ثانية فقط وتمضي دون تجربة أي منهما؛ أما NetworkManager المشغول في بداية الجولة فيأخذ المسار الخارجي، حيث تُجرَّب شبكات الطوارئ والمفتوحة مع ذلك. لا يُرشَّح إلا ما يعلّمه المسح مفتوحاً: على النظام القديم يعدّ محلل `iw` الشبكة مؤمَّنة حين يحمل سطر قدراتها `Privacy` أو كتلة WPA/RSN، وبديل `iwlist` حين يظهر `Encryption key:on`، وبديل جدول `wpa_supplicant` حين تحمل راياته WPA أو RSN أو WEP؛ وعلى NetworkManager تكون الشبكة مفتوحة حين يكون عمود `SECURITY` في `nmcli` فارغاً. تُتجاوز الشبكات الغريبة المفتوحة التي إشارتها دون -80 dBm (`wpa`) أو دون 25 بالمئة (NetworkManager)، والشبكة على نطاقين تُحسب مرة، والشبكة التي تعترض صفحتها الحركة تفشل فحص الإنترنت فتُسقط من جديد ما لم تسمح بوابتها بمرور `ping`، لأن جواب `ping` وحده يُحسب اتصالاً. تُضاف الشبكة مدخلاً مؤقتاً لا يُكتب على القرص أبداً: على النظام `wpa` مدخل في ذاكرة `wpa_supplicant` (`key_mgmt NONE`، ولا أمر حفظ في السكربت)؛ وعلى NetworkManager ملف مفاتيح تحت `/run/NetworkManager/system-connections`، باسم على نمط الحارس نفسه، مع `autoconnect=false` يزول عند إعادة التشغيل. يُكتب معرّفه في `${RUN_DIR}/open_id` قبل المحاولة ليزيله خليفة الحارس المنهار عند البدء؛ وعند النجاح تُعاد الشبكات المخزنة إلى التفعيل ليستطيع الجهاز العودة إلى المنزل وحده؛ ويُحذف المدخل المؤقت في أول دورة سليمة تجد الجهاز على شبكة مختلفة، وعند بداية الإنعاش التالي، وبعد خطوة الإصلاح الثالثة على NetworkManager. سحبه لا يكتب شيئاً في السجل على `wpa`؛ وعلى NetworkManager يكتب سطر `DEBUG` واحداً حين يكون ملف التعريف زال أصلاً، وسطر `ERROR` واحداً يبدأ بـ `REFUSING delete:` حين يرفض حارس الحذف.
+حين يفقد الجهاز الإنترنت ولا تعيده شبكاته المخزنة ولا شبكات الطوارئ في `SAFETY_NET`، يسمح هذا المفتاح للحارس بالانضمام إلى شبكة بلا كلمة سر يبثها أي أحد قريب. الشبكات المفتوحة هي الخطوة الأخيرة في كل جولة من جولات الإنعاش الثلاث على الأكثر، بالترتيب المذكور في مقدمة القسم: بعد الخطوة الأولى اللطيفة، وبعد الشبكات المخزنة، وبعد شبكات الطوارئ التي تلي خطوة إصلاح الجولة (للعطل في الجهاز نفسه) أو تلي التصنيف مباشرة (للانقطاع الخارجي). على صورة NetworkManager تنطبق حالتان خاصتان: حين يبلّغ NetworkManager اتصالاً بلا إنترنت تُتخطى خطوة الإصلاح وتُجرَّب شبكات الطوارئ فالمفتوحة مباشرة؛ وحين يوجد NetworkManager في منتصف تفعيل بعد جمع أدلة العطل في الجهاز نفسه تنتظر الجولة 20 ثانية فقط وتمضي دون تجربة أي منهما؛ أما NetworkManager المشغول في بداية الجولة فيأخذ المسار الخارجي، حيث تُجرَّب شبكات الطوارئ والمفتوحة مع ذلك. لا يُرشَّح إلا ما يعلّمه المسح مفتوحاً: على النظام القديم يعدّ محلل `iw` الشبكة مؤمَّنة حين يحمل سطر قدراتها `Privacy` أو كتلة WPA/RSN، وبديل `iwlist` حين يظهر `Encryption key:on`، وبديل جدول `wpa_supplicant` حين تحمل راياته WPA أو RSN أو WEP؛ وعلى NetworkManager تكون الشبكة مفتوحة حين يكون عمود `SECURITY` في `nmcli` فارغاً. تُتجاوز الشبكات الغريبة المفتوحة التي إشارتها دون -80 dBm (`wpa`) أو دون 25 بالمئة (NetworkManager)، والشبكة على نطاقين تُحسب مرة، والشبكة التي تعترض صفحتها الحركة تفشل فحص الإنترنت فتُسقط من جديد ما لم تسمح بوابتها بمرور `ping`، لأن جواب `ping` وحده يُحسب اتصالاً. تُضاف الشبكة مدخلاً مؤقتاً لا يُكتب على القرص أبداً: على النظام `wpa` مدخل في ذاكرة `wpa_supplicant` (`key_mgmt NONE`، ولا أمر حفظ في السكربت)؛ وعلى NetworkManager ملف مفاتيح تحت `/run/NetworkManager/system-connections`، باسم على نمط الحارس نفسه، مع `autoconnect=false` يزول عند إعادة التشغيل. يُكتب معرّفه في `${RUN_DIR}/open_id` قبل المحاولة ليزيله خليفة الحارس المنهار عند البدء؛ وعند النجاح تُعاد الشبكات المخزنة إلى التفعيل ليستطيع الجهاز العودة إلى المنزل وحده؛ ويُحذف المدخل المؤقت في أول دورة سليمة تجد الجهاز على شبكة مختلفة، وعند بداية الإنعاش التالي، وبعد خطوة الإصلاح الثالثة على NetworkManager. سحبه يُقال في الحالات الثلاث بالأسطر أدناه؛ وعلى NetworkManager يُكتب فوق ذلك سطر `DEBUG` واحد حين يكون ملف التعريف زال أصلاً، وسطر `ERROR` واحد يبدأ بـ `REFUSING delete:` حين يرفض حارس الحذف.
 
 `SAFETY_NET`: تُجرَّب شبكات الطوارئ دائماً أولاً؛ ولا تُبلَغ الشبكات المفتوحة إلا حين تكون القائمة فارغة أو فشل كل مدخل. النظام: على النظام القديم (`dhcpcd` و`wpa_supplicant`) تُتجاوز أي شبكة مفتوحة يحوي اسمها محارف غير ASCII، لأن المسح يهرّب هذه الأسماء بالشكل `\xNN` والصيغة المقتبسة في `wpa_supplicant` لا تحمل شرطة مائلة عكسية (وكذلك الأسماء التي تحوي شرطة مائلة عكسية حرفية)؛ وعلى NetworkManager تُطابَق الأسماء بايتات ست عشرية وتُكتب مصفوفة بايتات، فالأسماء العربية والرموز كلها صالحة. وضع المراقبة فقط لا يجري إنعاشاً أبداً فلا أثر للمفتاح هناك. `RUN_DIR`: ملف العلامة `open_id` ينتقل معه. `SCAN_TTL`: على `wpa` يأتي المرشحون من المسح الذي يقدّم ذاكرته ما دامت أحدث من `SCAN_TTL`؛ وعلى NetworkManager من قائمة `nmcli` نفسها مع إعادة مسح تلقائية. `LOG_TARGET` و`SITE_URL`: سطرا القصة أدناه سطرا موقع؛ يصلان إلى الموقع حين يكون `LOG_TARGET` هو `both` أو `remote` و`SITE_URL` مضبوطاً، ومع `remote` لا يُحفظان في الملف المحلي أصلاً. `LOG_LANG=ar` يستبدل نصهما المحلي بالصياغة العربية. على NetworkManager يرفض مساعد الحذف إزالة أي ملف تعريف لم ينشئه الحارس (اسم لا يتبع نمطه، أو ملف لا يقع تحت `/run/NetworkManager/system-connections/awacs-*`)، فلا تُمس ملفات تعريف المالك أبداً.
 
 أسطر السجل:
 
-- `[INFO][${dd/mm HH:MM:SS}] trying open networks as last resort`
-- `[OK][${dd/mm HH:MM:SS}] connected to OPEN network: ${SSID}`
-- `[DEBUG][${dd/mm HH:MM:SS}] connect_id: activating ${id} (backend ${BACKEND})`
-- `[DEBUG][${dd/mm HH:MM:SS}] del_own: ${uuid} already gone`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] trying open networks as last resort (${heard} open networks heard)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] connected to OPEN network: ${SSID} (${upload ${kbps} kbps|signal mode}) - stored networks stay armed, home again when one returns`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] connect_id: activating ${id} (backend ${BACKEND})`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] del_own: ${uuid} already gone`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] open network ${SSID} linked but no internet (captive portal?) - trying the next` (قامت الوصلة بلا إنترنت؛ مرة لكل انقطاع لكل شبكة؛ والشبكة التي ترفض الارتباط أصلاً تُعدّ ولا تُقال)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] no open network delivered internet (${heard} heard, ${tried} tried, ${portals} linked without internet)` (ختام المرور الخاسر، مرة لكل انقطاع، حتى بلا شبكة مفتوحة مسموعة)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] dropping temporary network ${SSID} - it stopped delivering` (بداية الإنعاش التالي والجهاز على المدخل المؤقت)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] back on a stored network: ${SSID} - temporary network ${SSID} removed` (الدورة الصحيحة التي تجد الجهاز على شبكة مخزنة)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] removed the temporary network ${SSID} left by the previous run` (البدء التالي بعد حارس مات؛ و`WARN` بالذيل ` - the device was still on it, recovery follows` حين كان الجهاز ما زال عليه)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] running with: measured mode, floor ${MIN_UP_KBPS}/${NIGHT_MIN_UP_KBPS} kbps day/night (night ${NIGHT_START}-${NIGHT_END}), switch gain ${SWITCH_GAIN_PCT}%, one evaluation per ${minutes} min, reboot after ${REBOOT_AFTER_MIN} min wedged, wifi cell ${on|off (REPORT_WIFI=no)|off (no SITE_URL)|off (auto with LOG_TARGET local)}, ${n} stored networks, ${n} emergency, open networks ${yes|no}, stamps in ${SITE_TZ|the device zone}` (جزء `open networks ${yes|no}`)
 
 متى تغيّره: اضبطه على `no` حين يجب ألا يتصل الجهاز بشبكة غريب أبداً (سياسة الموقع، أو مكان مليء بصفحات اعتراض الفنادق والمقاهي تضيع فيه كل محاولة). أبقه `yes` لجهاز واجبه الوحيد إخراج بياناته وأي إنترنت يعمل خير من لا شيء. تذكر أن الكلمة `yes` بالضبط وحدها تفعّله.
 
@@ -985,13 +1158,14 @@ OPEN_NETWORKS="no"
 
 الوحدة: مفتاح نعم/لا
 
-يجعل الجهاز أصعب رصداً بمسح `ping` عابر على IPv4 أو بمتصفح Bonjour/mDNS على الشبكة المحلية. مرة واحدة أثناء بدء الحارس يضيف قاعدة جدار ناري واحدة تُسقط بصمت طلبات `ping` الواردة على واجهة الواي فاي: يختبر أولاً وجود القاعدة (`iptables -C INPUT -i "$IF" -p icmp --icmp-type echo-request -j DROP`) ولا يدرجها في رأس سلسلة INPUT (`iptables -I INPUT -i "$IF" -p icmp --icmp-type echo-request -j DROP`) إلا إن غابت، فالمشغّل الذي يعيد الإطلاق لا يكدّس قواعد مكررة أبداً. ثم يوقف خدمة Avahi بـ `systemctl stop avahi-daemon`: الخدمة تُوقَف لا تُعطَّل ولا تُحجب، فتعود في الإقلاع التالي وتُوقَف من جديد حين يبدأ الحارس. لا يُحجب إلا طلب `ping` الوارد على IPv4: القاعدة في سلسلة INPUT وتطابق `echo-request` فقط، فتمر أوامر `ping` الصادرة من الحارس وردودها ويستمر فحص الإنترنت وفحص البوابة في العمل؛ ولا تُضاف قاعدة `ip6tables`، فـ `ping` على IPv6 ما زال يُجاب. الأمران يتجاهلان الفشل، ويُطبع سطر القصة بعدهما دون شرط، فيظهر حتى حين يغيب `iptables` أو يفشل الإيقاف. لا يُلغى شيء حين يتوقف الحارس: معالج الإيقاف يعيد تفعيل الشبكات المخزنة ويطبع صندوق الوداع فقط؛ فتبقى قاعدة إسقاط `ping` في النواة حتى إعادة التشغيل أو أمر يدوي `iptables -D INPUT -i ${IF} -p icmp --icmp-type echo-request -j DROP`، ويبقى Avahi موقوفاً حتى إعادة التشغيل، أو `systemctl start avahi-daemon` يدوي، أو تفعيل عبر المقبس. اسم المضيف في DHCP لا يخفيه هذا المفتاح؛ افعل ذلك في `/etc/dhcpcd.conf` إن أردت.
+يجعل الجهاز أصعب رصداً بمسح `ping` عابر على IPv4 أو بمتصفح Bonjour/mDNS على الشبكة المحلية. مرة واحدة أثناء بدء الحارس يضيف قاعدة جدار ناري واحدة تُسقط بصمت طلبات `ping` الواردة على واجهة الواي فاي: يختبر أولاً وجود القاعدة (`iptables -C INPUT -i "$IF" -p icmp --icmp-type echo-request -j DROP`) ولا يدرجها في رأس سلسلة INPUT (`iptables -I INPUT -i "$IF" -p icmp --icmp-type echo-request -j DROP`) إلا إن غابت، فالمشغّل الذي يعيد الإطلاق لا يكدّس قواعد مكررة أبداً. ثم يوقف خدمة Avahi بـ `systemctl stop avahi-daemon`: الخدمة تُوقَف لا تُعطَّل ولا تُحجب، فتعود في الإقلاع التالي وتُوقَف من جديد حين يبدأ الحارس. لا يُحجب إلا طلب `ping` الوارد على IPv4: القاعدة في سلسلة INPUT وتطابق `echo-request` فقط، فتمر أوامر `ping` الصادرة من الحارس وردودها ويستمر فحص الإنترنت وفحص البوابة في العمل؛ ولا تُضاف قاعدة `ip6tables`، فـ `ping` على IPv6 ما زال يُجاب. تُفحص كل من الخطوتين: `iptables` الغائب أو القاعدة المرفوضة تعني أن الجهاز ما زال يرد على `ping`، وavahi التي تبقى نشطة بعد أمر الإيقاف تعني أنه ما زال يعلن عن نفسه (الصورة التي لا تحوي avahi أصلاً ليست فشلاً)؛ ولا يُطبع سطر النجاح إلا حين تنجح الخطوتان، وإلا سطر `WARN` يسمّي ما فشل. لا يُلغى شيء حين يتوقف الحارس: معالج الإيقاف يعيد تفعيل الشبكات المخزنة ويطبع صندوق الوداع فقط؛ فتبقى قاعدة إسقاط `ping` في النواة حتى إعادة التشغيل أو أمر يدوي `iptables -D INPUT -i ${IF} -p icmp --icmp-type echo-request -j DROP`، ويبقى Avahi موقوفاً حتى إعادة التشغيل، أو `systemctl start avahi-daemon` يدوي، أو تفعيل عبر المقبس. اسم المضيف في DHCP لا يخفيه هذا المفتاح؛ افعل ذلك في `/etc/dhcpcd.conf` إن أردت.
 
-الواجهة (المكتشفة، أو `AWACS_IF`): ترتبط القاعدة بتلك الواجهة وحدها؛ فوحدة واي فاي ثانية أو منفذ الإيثرنت ما زال يجيب `ping`. `iptables` ليس في قائمة الأدوات التي يجردها الحارس، فغياب الملف التنفيذي لا يُبلَّغ ولا يُثبَّت والفشل صامت. وضع المراقبة فقط يتوقف في حلقته قبل هذه الخطوة فلا يُطبَّق التخفي هناك أبداً. أوامر الطرفية لا تستدعيه. تُوقَف وحدة `avahi-daemon.service` فقط، وتُترك `avahi-daemon.socket` على حالها، فقد يعيد تفعيل المقبس تشغيل الخدمة قبل الإقلاع التالي حين يفتح برنامج محلي مقبس Avahi. `LOG_TARGET` و`SITE_URL`: سطر القصة سطر موقع؛ يصل إلى الموقع حين يكون `LOG_TARGET` هو `both` أو `remote` و`SITE_URL` مضبوطاً، ومع `remote` لا يُحفظ في الملف المحلي. `LOG_LANG=ar` يستبدل نصه المحلي بالصياغة العربية. مع التخفي يفشل `ping` من الشبكة المحلية إلى الجهاز ويتوقف `hostname.local` عن الحل، فأي مراقبة محلية تعتمد على أحدهما تحتاج طريقة أخرى.
+الواجهة (المكتشفة، أو `AWACS_IF`): ترتبط القاعدة بتلك الواجهة وحدها؛ فوحدة واي فاي ثانية أو منفذ الإيثرنت ما زال يجيب `ping`. `iptables` ليس في قائمة الأدوات التي يجردها الحارس، فغياب الملف التنفيذي لا يُثبَّت، ويُقال في سطر `WARN` التخفي. وضع المراقبة فقط يتوقف في حلقته قبل هذه الخطوة فلا يُطبَّق التخفي هناك أبداً. أوامر الطرفية لا تستدعيه. تُوقَف وحدة `avahi-daemon.service` فقط، وتُترك `avahi-daemon.socket` على حالها، فقد يعيد تفعيل المقبس تشغيل الخدمة قبل الإقلاع التالي حين يفتح برنامج محلي مقبس Avahi. `LOG_TARGET` و`SITE_URL`: سطر القصة سطر موقع؛ يصل إلى الموقع حين يكون `LOG_TARGET` هو `both` أو `remote` و`SITE_URL` مضبوطاً، ومع `remote` لا يُحفظ في الملف المحلي. `LOG_LANG=ar` يستبدل نصه المحلي بالصياغة العربية. مع التخفي يفشل `ping` من الشبكة المحلية إلى الجهاز ويتوقف `hostname.local` عن الحل، فأي مراقبة محلية تعتمد على أحدهما تحتاج طريقة أخرى.
 
 أسطر السجل:
 
-- `[INFO][${dd/mm HH:MM:SS}] stealth mode active (icmp hidden, avahi stopped)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] stealth mode active (icmp hidden, avahi stopped)` (حين تنجح الخطوتان)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] stealth mode partly active: ${parts}` (الأجزاء بفاصلة بينها: `iptables missing - pings still answered`، أو `ping rule could not be added - pings still answered`، و`avahi could not be stopped`)
 
 متى تغيّره: فعّله لجهاز يعيش على شبكة مشتركة أو غير موثوقة (واي فاي مبنى مشترك، أو نقطة اتصال فيها غرباء) لا تريد أن يراه فيها الجيران. اتركه معطلاً حين تفحص الجهاز من الشبكة المحلية بـ `ping` أو تجده بـ `hostname.local`، لأن كليهما يتوقف. تذكر أنه يُطبَّق مرة عند البدء ولا يُزال عند الإيقاف.
 
@@ -1007,25 +1181,25 @@ STEALTH_MODE="yes"
 
 ### DEBUG
 
-الافتراضي: `"yes"` (أو قيمة متغير البيئة `AWACS_DEBUG` حين يُضبط على قيمة غير فارغة)
+الافتراضي: `"no"` (أو قيمة متغير البيئة `AWACS_DEBUG` حين يُضبط على قيمة غير فارغة)
 
 المسموح: الكلمة `yes` حرفياً تكتب أسطر `DEBUG`. أي قيمة أخرى (`no` و`""` و`YES` و`true`) تسكتها. لا بديل ولا تحذير.
 
 الوحدة: مفتاح نعم/لا
 
-يتحكم في كتابة أسطر تتبّع القرار، بالمستوى `DEBUG`، في السجل المحلي. تذهب هذه الأسطر مباشرة إلى `LOG_FILE`: لا تسافر إلى الموقع أبداً، وتبقى بالإنجليزية أياً كان `LOG_LANG`، وتُكتب محلياً حتى مع `LOG_TARGET=remote` لأن ذلك المرشح يخص أسطر القصة وحدها. في السكربت سبعة أسطر `DEBUG` بالضبط: عدد محاولات المسح المستعملة بعد كل مسح جديد (فقط حين تكون ذاكرة المسح أقدم من `SCAN_TTL`)؛ وعلى NetworkManager ملاحظة حين يكون المدخل المؤقت المطلوب حذفه زال أصلاً؛ وسطر قبل كل تفعيل شبكة يجريه الحارس باسم المعرّف والنظام؛ ونتيجة كل نظرة للشبكة المفضلة مع الأولويتين الحالية والأفضل وأي شبكة مُبعَدة؛ وسطر أثناء جولة إنعاش حين تشير الأدلة إلى عطل في الجهاز نفسه؛ وفي كل دورة سليمة سطر واحد لمقياس الرفع بمعدل عدّاد النواة وعدّاد العيّنات البطيئة، إما بصيغة `QA(stream)` أثناء بث أو رفع وإما بصيغة `QA` مع وضع النهار أو الليل. يؤخذ الافتراضي من البيئة: `AWACS_DEBUG` المصدَّر غير الفارغ (مثلاً في `rc.local` قبل حلقة الإطلاق، أو سطر `Environment=` في وحدة systemd) يصبح الافتراضي، وغيابه أو فراغه يعطي `yes`؛ ويُقرأ ملف الإعدادات بعده، فسطر `DEBUG=` في `/etc/awacs.conf` يتقدم على الافتراضي المضمّن وعلى متغير البيئة معاً، ثم تُختم القيمة.
+يتحكم في كتابة أسطر تتبّع القرار، بالمستوى `DEBUG`، في السجل المحلي. تذهب هذه الأسطر مباشرة إلى `LOG_FILE`: لا تسافر إلى الموقع أبداً، وتبقى بالإنجليزية أياً كان `LOG_LANG`، وتُكتب محلياً حتى مع `LOG_TARGET=remote` لأن ذلك المرشح يخص أسطر القصة وحدها. في السكربت سبعة أسطر `DEBUG` بالضبط: عدد محاولات المسح المستعملة بعد كل مسح جديد (فقط حين تكون ذاكرة المسح أقدم من `SCAN_TTL`)؛ وعلى NetworkManager ملاحظة حين يكون المدخل المؤقت المطلوب حذفه زال أصلاً؛ وسطر قبل كل تفعيل شبكة يجريه الحارس باسم المعرّف والنظام؛ ونتيجة كل نظرة للشبكة المفضلة مع الأولويتين الحالية والأفضل وأي شبكة مُبعَدة؛ وسطر أثناء جولة إنعاش حين تشير الأدلة إلى عطل في الجهاز نفسه؛ وفي كل دورة سليمة سطر واحد لمقياس الرفع بمعدل عدّاد النواة وعدّاد العيّنات البطيئة، إما بصيغة `QA(stream)` أثناء بث أو رفع وإما بصيغة `QA` مع وضع النهار أو الليل. يؤخذ الافتراضي من البيئة: `AWACS_DEBUG` المصدَّر غير الفارغ (مثلاً في `rc.local` قبل حلقة الإطلاق، أو سطر `Environment=` في وحدة systemd) يصبح الافتراضي، وغيابه أو فراغه يعطي `no`؛ ويُقرأ ملف الإعدادات بعده، فسطر `DEBUG=` في `/etc/awacs.conf` يتقدم على الافتراضي المضمّن وعلى متغير البيئة معاً، ثم تُختم القيمة.
 
 `AWACS_DEBUG` يوفر الافتراضي فقط؛ وسطر `DEBUG` في الملف يفوز. الراية `-d` تمرر البيئة عبر `setsid`، فيحمل `AWACS_DEBUG` إلى الحارس في الخلفية. `LOG_FILE` و`LOG_CAP`: أسطر `DEBUG` تُحسب في التدوير؛ ومع `DEBUG=yes` يقع سطر `QA` واحد في كل دورة سليمة، والدورة نحو `TICK` (10 ثوانٍ افتراضياً) زائد عيّنة العدّاد بثلاث ثوانٍ، فيغطي حد 1500 سطر نحو خمس ساعات من يوم سليم بدل أيام من أسطر القصة. `LOG_LANG` بلا أثر عليها. `LOG_TARGET` و`SITE_URL` بلا أثر. `NIGHT_MODE`: يظهر اسم الوضع في سطر `QA`، ومع تعطيله يقرأ دائماً `day`. في وضع الإشارة تطبع أسطر `QA` التدفق لكن لا تقييم يتبعها. أوامر الطرفية تعمل بـ `root` مع الملف محمّلاً وتكتب في `LOG_FILE` نفسه: `evaluate` و`scan` يستدعيان المسح على النظامين، و`networks` على `wpa` فقط، فيكتب الأمر اليدوي سطر `scan: ${used}/${tries} tries used` في سجل الحارس كلما كانت ذاكرة المسح أقدم من `SCAN_TTL`؛ أما `status` و`speed` فلا يستدعيان المسح، و`check` و`help` يعملان بلا `root` وبالافتراضيات ولا يكتبان سطر `DEBUG`.
 
 أسطر السجل:
 
-- `[DEBUG][${dd/mm HH:MM:SS}] scan: ${used}/${tries} tries used`
-- `[DEBUG][${dd/mm HH:MM:SS}] del_own: ${uuid} already gone`
-- `[DEBUG][${dd/mm HH:MM:SS}] connect_id: activating ${id} (backend ${BACKEND})`
-- `[DEBUG][${dd/mm HH:MM:SS}] best_pref_id: cur=${current_id}(p=${current_priority}) -> best=${candidate_id|none}(p=${best_priority}) veto=${set_aside_id|none}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] scan: ${used}/${tries} tries used`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] del_own: ${uuid} already gone`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] connect_id: activating ${id} (backend ${BACKEND})`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] best_pref_id: cur=${current_id}(p=${current_priority}) -> best=${candidate_id|none}(p=${best_priority}) veto=${set_aside_id|none}`
 - سطر أدلة العطل في الجهاز نفسه أثناء جولة إنعاش، ويذكر رقم الجولة وهل رُئيت كلمة سر خاطئة
-- `[DEBUG][${dd/mm HH:MM:SS}] QA(stream): flow=${flow} kbps, strikes=${strikes}`
-- `[DEBUG][${dd/mm HH:MM:SS}] QA: flow=${flow} kbps, strikes=${strikes}, profile=${day|night}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] QA(stream): flow=${flow} kbps, strikes=${strikes}`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] QA: flow=${flow} kbps, strikes=${strikes}, profile=${day|night}`
 
 متى تغيّره: اضبطه على `no` حين يستقر الجهاز وتريد أن يحفظ السجل المحلي أياماً من أسطر القصة بدل ساعات من قراءات المقياس في كل دورة. أبقه `yes` وأنت تحقق لماذا بدّل الجهاز شبكته أو لم يبدّلها: أسطر `DEBUG` هي السجل الوحيد لمقياس الرفع في كل دورة، وعدّاد العيّنات البطيئة، وأحكام الشبكة المفضلة، وأدلة العطل في الجهاز نفسه. استعمل `AWACS_DEBUG` حين تريد أن يقرر المشغّل لا ملف الإعدادات، ولا تضبط `DEBUG` في الملف معه وإلا فاز الملف.
 
@@ -1041,25 +1215,29 @@ DEBUG="no"
 
 ## الملفات
 
-خمسة مفاتيح تحدد مكان ملفات الحارس وتحد أحجامها. تشترك `LOG_CAP` و`SCAN_TTL` و`SPOOL_CAP` في قاعدة الفحص الرقمية؛ و`RUN_DIR` يجب أن يبدأ بـ `/`؛ و`LOG_FILE` لا يُفحص أبداً. تُختم الخمسة بعد التحميل، فالتغيير يحتاج إعادة تشغيل الحارس.
+خمسة مفاتيح تحدد مكان ملفات الحارس وتحد أحجامها. تشترك `LOG_CAP` و`SCAN_TTL` و`SPOOL_CAP` في قاعدة الفحص الرقمية؛ و`RUN_DIR` يجب أن يبدأ بـ `/`؛ و`LOG_FILE` لا يُفحص أبداً. تُختم الخمسة بعد التحميل، فالتغيير يحتاج إعادة تشغيل الحارس. وملفان لا مفتاح لهما ومسارهما ثابت، `/etc/awacs.key` و`/etc/awacs.networks`؛ وهما موصوفان بعد قائمة `RUN_DIR`.
 
 ### LOG_FILE
 
 الافتراضي: `/var/log/awacs.log`
 
-المسموح: أي نص. لا يفحصه السكربت أبداً: هو مفتاح الملفات الوحيد الغائب عن كتلة الفحص، فلا اختبار للمسار المطلق ولا للوجود ولا بديل. القالب يطلب مساراً مطلقاً. حين يتعذر فتح المسار للإلحاق (مجلد غائب، أو نظام ملفات للقراءة فقط أو ممتلئ، أو قيمة فارغة) يُسقط كل سطر بصمت ويستمر الحارس في العمل.
+المسموح: أي نص. لا يفحصه السكربت أبداً: هو مفتاح الملفات الوحيد الغائب عن كتلة الفحص، فلا اختبار للمسار المطلق ولا للوجود ولا بديل. القالب يطلب مساراً مطلقاً. حين يتعذر فتح المسار للإلحاق (مجلد غائب، أو نظام ملفات للقراءة فقط أو ممتلئ، أو قيمة فارغة) يُسقط كل سطر، ويُقال ذلك للموقع مرة في كل سلسلة فشل، ويستمر الحارس في العمل.
 
 الوحدة: مسار ملف
 
-السجل المحلي. كل سطر يكتبه الحارس محلياً يمر بدالة واحدة تلحق `[LEVEL][dd/mm HH:MM:SS] text` بهذا المسار؛ والمستويات `INFO` و`OK` و`WARN` و`ERROR` و`DEBUG`. يُنشأ الملف عند أول كتابة، مقروءاً لـ `root` فقط، لأن السكربت يضبط `umask 077` قرب بدايته قبل لمس أي ملف. الكتابة لا تنتظر الشبكة أبداً ولا توقف الحارس: الإلحاق الفاشل يُهمل بلا رسالة، وعدّ الأسطر الذي يليه يُقرأ صفراً. حين يتجاوز الملف حد `LOG_CAP` يُقص عبر ملف مؤقت مجاور `${LOG_FILE}.t` يُنقل فوق السجل.
+السجل المحلي. كل سطر يكتبه الحارس محلياً يمر بدالة واحدة تلحق `yyyy-mm-ddThh:mm:ss+hh:mm [LEVEL] text` بهذا المسار؛ والمستويات `INFO` و`OK` و`WARN` و`ERROR` و`DEBUG`. يُنشأ الملف عند أول كتابة، مقروءاً لـ `root` فقط، لأن السكربت يضبط `umask 077` قرب بدايته قبل لمس أي ملف. الكتابة لا تنتظر الشبكة أبداً ولا توقف الحارس: الإلحاق الفاشل يُهمل ويرفع العلامة `${RUN_DIR}/log.down`، فتقول أول دورة صحيحة ذلك للموقع مرة، ويُخفض الإلحاق الناجح التالي العلامة ويُقال ذلك مرة؛ وعدّ الأسطر الذي يليه يُقرأ صفراً. حين يتجاوز الملف حد `LOG_CAP` يُقص عبر ملف مؤقت مجاور `${LOG_FILE}.t` يُنقل فوق السجل.
 
 `LOG_LANG` يختار لغة أسطر القصة المكتوبة هنا (أسطر `DEBUG` تبقى بالإنجليزية). `DEBUG=yes` يكتب سطر `DEBUG` واحداً في كل دورة مع الإنترنت، وهو ما يملأ الملف. `LOG_TARGET=remote` يبقي محلياً أسطر `WARN` و`ERROR` من أسطر القصة فقط، لكن أسطر `DEBUG` والأسطر المحلية دائماً وسطر `reporting:` عند البدء (وتحذير التخفيض حين ينطبق) تظل تقع هنا. `LOG_CAP` يحدد حجم القص. كل تشغيل للسكربت بـ `root`، ومنه أوامر الطرفية، يلحق عبر الدالة نفسها. خارج السكربت: `install.sh --uninstall --purge` يحذف المسار الافتراضي وملفه المجاور `.t` فقط لا سجلاً منقولاً؛ وأداة الطرفية الاختيارية (`tools/awacs-tui.sh`) تقرأ `LOG_FILE` من ملف الإعدادات ولا تقبل إلا قيمة مطلقة.
 
 أسطر السجل:
 
-- `[${LEVEL}][${dd/mm HH:MM:SS}] ${text}` (شكل كل سطر محلي)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [${LEVEL}] ${text}` (شكل كل سطر محلي)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] local log ${LOG_FILE} not writable - SD card read-only? the site keeps the story` (على الموقع، في أول دورة صحيحة بعد إلحاق فاشل؛ مرة في كل سلسلة فشل)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] local log ${LOG_FILE} writable again` (في أول دورة صحيحة بعد إلحاق ناجح يلي فشلاً)
 
-متى تغيّره: نادراً. انقله حين يجب أن يعيش السجل على قرص آخر (ذاكرة USB لتجنيب بطاقة الذاكرة) أو حيث تتوقعه أداة أخرى. يجب أن يكون المجلد موجوداً وقابلاً للكتابة لحظة كل كتابة: الأسطر المكتوبة قبل توفره تضيع، بلا بديل ولا تحذير.
+بجانب السجل تعيش أيضاً ملفات ذاكرة إعادة التشغيل الذاتية `${LOG_FILE}.reboot` و`${LOG_FILE}.spool` و`${LOG_FILE}.reboots` (انظر `REBOOT_AFTER_MIN`)، لأن بطاقة الذاكرة وحدها تنجو من إعادة التشغيل.
+
+متى تغيّره: نادراً. انقله حين يجب أن يعيش السجل على قرص آخر (ذاكرة USB لتجنيب بطاقة الذاكرة) أو حيث تتوقعه أداة أخرى. يجب أن يكون المجلد موجوداً وقابلاً للكتابة لحظة كل كتابة: الأسطر المكتوبة قبل توفره تضيع، ويقول الموقع ذلك مرة حين يوجد.
 
 يبقي كتابات `DEBUG` في كل دورة بعيدة عن بطاقة الذاكرة؛ والأسطر المكتوبة قبل ضم `/mnt/usb` تضيع بصمت:
 
@@ -1105,9 +1283,9 @@ LOG_CAP=5000
 
 الوحدة: مسار مجلد
 
-المجلد الخاص الذي يحوي كل ملف تشغيل للحارس: قفل النسخة الواحدة الحامل لرقم عملية الحارس (`lock`)، وذاكرة المسح المؤقتة (`scan`)، وعدّاد المسوح الفارغة (`scan.empty`)، ومخزون أسطر الموقع غير المسلَّمة (`spool` مع ملفيه المؤقتين `spool.sending` و`spool.t`)، والعلامة التي تسمّي مدخل الشبكة المؤقت الذي أنشأه الحارس بنفسه (`open_id`)، وجسم الرفع الذي يستعمله بديل `wget` (`probe`)، وعلامة محاولة تثبيت الحزم مرة كل إقلاع (`apt_tried`). كل مسار تحته يُحسب بعد قراءة ملف الإعدادات، فتغيير `RUN_DIR` ينقلها كلها معاً. يُنشأ المجلد في كل تشغيل بـ `root`، بعد فحص `root` واختيار الواجهة وقبل لمس أي ملف تشغيل، بالصلاحية 0700 (`install -d -m 700`، وبديلاً `mkdir -p` ثم `chmod 700`)؛ وكل ملف داخله يُنشأ مقروءاً لـ `root` فقط. في المسار الافتراضي يكون `/run` في الذاكرة ويُفرَغ في كل إقلاع، وعلى ذلك تعتمد علامات الإقلاع الواحد.
+المجلد الخاص الذي يحوي كل ملف تشغيل للحارس: قفل النسخة الواحدة الحامل لرقم عملية الحارس (`lock`)، وذاكرة المسح المؤقتة (`scan`)، وعدّاد المسوح الفارغة (`scan.empty`)، ومخزون أسطر الموقع غير المسلَّمة (`spool` مع ملفيه المؤقتين `spool.sending` و`spool.t`)، والعلامة التي تسمّي مدخل الشبكة المؤقت الذي أنشأه الحارس بنفسه (`open_id`)، وجسم الرفع الذي يستعمله بديل `wget` (`probe`)، وعلامة محاولة تثبيت الحزم مرة كل إقلاع (`apt_tried`)، وعدّاد بدايات الحارس في هذا الإقلاع (`starts`)، وعلامة خسارة القفل المقولة مرة (`lock_lost`)، وعلامات النوبات الثلاث (`site.down` و`wifi.down` و`log.down`)، وعدّاد ما قصّه المخزون (`spool.dropped`)، وعلامة القياس الذي لم يُقبل (`probe.fail`). كل مسار تحته يُحسب بعد قراءة ملف الإعدادات، فتغيير `RUN_DIR` ينقلها كلها معاً. يُنشأ المجلد في كل تشغيل بـ `root`، بعد فحص `root` واختيار الواجهة وقبل لمس أي ملف تشغيل، بالصلاحية 0700 (`install -d -m 700`، وبديلاً `mkdir -p` ثم `chmod 700`)؛ وكل ملف داخله يُنشأ مقروءاً لـ `root` فقط. في المسار الافتراضي يكون `/run` في الذاكرة ويُفرَغ في كل إقلاع، وعلى ذلك تعتمد علامات الإقلاع الواحد.
 
-يجب أن يكون المسار على نظام ملفات قابل للكتابة منذ بداية الإقلاع: إن تعذر إنشاء المجلد أو الكتابة فيه تعذر فتح ملف القفل ولم يعمل الحارس، وأعاد المشغّل (حلقة `rc.local` أو وحدة systemd بـ `RestartSec=10`) إطلاقه كل 10 ثوانٍ. علامتان تفترضان أن المجلد يُفرَغ عند إعادة التشغيل: على تخزين دائم يمنع `apt_tried` التثبيت التلقائي للأدوات في كل إقلاع لاحق، وعلى النظام `wpa` يُسلَّم `open_id` قديم من إقلاع سابق إلى `remove_network` في البدء التالي بلا فحص للاسم، وقد يزيل ذلك شبكة مخزنة حقيقية من `wpa_supplicant` الحي حتى يُعاد تشغيله (النظام `nm` يفحص اسم المدخل وموقع ملفه أولاً ويرفض ما لم ينشئه). تشارك أوامر الطرفية المجلد بـ `root`: `status` يقرأ القفل لرقم العملية؛ و`scan` و`evaluate`، و`networks` على `wpa`، تشارك ذاكرة المسح. `install.sh` يستعمل المسار الافتراضي الثابت لحالته وإزالته؛ وأداة الطرفية الاختيارية تقرأ `RUN_DIR` من ملف الإعدادات ولا تقبل إلا قيمة مطلقة. `check` و`help` بلا `root` لا ينشئانه أبداً.
+يجب أن يكون المسار على نظام ملفات قابل للكتابة منذ بداية الإقلاع: إن تعذر إنشاء المجلد أو الكتابة فيه تعذر فتح ملف القفل ولم يعمل الحارس، وأعاد المشغّل (حلقة `rc.local` أو وحدة systemd بـ `RestartSec=10`) إطلاقه كل 10 ثوانٍ. عدة علامات تفترض أن المجلد يُفرَغ عند إعادة التشغيل: على تخزين دائم يمنع `apt_tried` التثبيت التلقائي للأدوات في كل إقلاع لاحق، ويستمر `starts` في العدّ فيقرأ سطر البدء `restart N of this boot` بعد إقلاع جديد، ولا يُقال `lock_lost` إلا مرة في عمر الملف، وعلى النظام `wpa` يُسلَّم `open_id` قديم من إقلاع سابق إلى `remove_network` في البدء التالي بلا فحص للاسم، وقد يزيل ذلك شبكة مخزنة حقيقية من `wpa_supplicant` الحي حتى يُعاد تشغيله (النظام `nm` يفحص اسم المدخل وموقع ملفه أولاً ويرفض ما لم ينشئه). تشارك أوامر الطرفية المجلد بـ `root`: `status` يقرأ القفل لرقم العملية؛ و`scan` و`evaluate`، و`networks` على `wpa`، تشارك ذاكرة المسح. `install.sh` يستعمل المسار الافتراضي الثابت لحالته وإزالته؛ وأداة الطرفية الاختيارية تقرأ `RUN_DIR` من ملف الإعدادات ولا تقبل إلا قيمة مطلقة. `check` و`help` بلا `root` لا ينشئانه أبداً.
 
 أسطر السجل: لا شيء.
 
@@ -1128,12 +1306,44 @@ RUN_DIR=/dev/shm/awacs
 - `lock`: قفل النسخة الواحدة، محجوز على واصف الملف 9 طوال حياة الحارس؛ محتواه رقم عملية الحارس، يكتبه من ربح القفل ويُفتح للإلحاق فلا تمسحه نسخة ثانية خاسرة؛ والمساعدون في الخلفية يغلقون الواصف 9 فلا يحملون القفل أبداً. `status` يقرؤه ويتحقق أن `/proc/${pid}/cmdline` يسمّي `awacs` قبل أن يقول إن الحارس يعمل، وصندوق الطرفية لإطلاق ثانٍ يعرضه.
 - `scan`: ذاكرة المسح المؤقتة، سطر لكل شبكة (الاسم، والإشارة، و`open` أو `sec`، مفصولة بجدولة)، الأقوى أولاً؛ ووقت تعديله هو العمر المقارَن بـ `SCAN_TTL`.
 - `scan.empty`: عدّاد المسوح المتتالية التي لم تسمع شيئاً من كل المصادر؛ يُزال لحظة يُسمع شيء؛ وعند ثلاثة (ثابت) تُسقط الذاكرة.
+- `scan.at`: وقت آخر مسح وصل إلى الراديو فعلاً بثواني يونكس (الصورة، أو جدول الأداة البديلة، أو حكم أن الراديو لم يسمع شيئاً)؛ تُنشر قائمة المسح مرة لكل مسح كهذا.
 - `spool`: أسطر الموقع التي لم تُسلَّم بعد؛ `spool.sending`: اللقطة الجاري إرسالها أثناء التفريغ، تُنقذ في البدء التالي إن قُطع التفريغ؛ `spool.t`: الملف المؤقت المستعمل أثناء القص أو الدمج.
 - `open_id`: معرّف مدخل الشبكة المؤقت (رقم شبكة `wpa` أو UUID ملف تعريف NetworkManager) الذي أنشأه الحارس بنفسه لشبكة مفتوحة أو شبكة طوارئ؛ يُكتب قبل كل محاولة ويبقى ما دام المدخل مستعملاً، ويُزال حين يُسحب المدخل أو تفشل المحاولة؛ ويقرؤه الحارس المعاد تشغيله أولاً ويزيل ذلك المدخل حتى لا يبقى شيء أنشأه الحارس بعده (على NetworkManager بعد فحص اسم المدخل وموقع ملفه؛ وعلى `wpa` بلا فحص).
 - `probe`: `PROBE_KB` كيلوبايت من الأصفار تُستعمل جسم رفع حين يغيب `curl` أو لا يعيد سرعة ويُستعمل `wget` بدلاً منه؛ يُحذف بعد القياس مباشرة.
 - `apt_tried`: علامة فارغة تُنشأ قبل محاولة تثبيت الحزم الوحيدة في الخلفية لكل إقلاع؛ وما دامت موجودة لا تجري محاولة أخرى.
+- `starts`: عدد بدايات الحارس في هذا الإقلاع، تزيده النسخة التي تربح القفل؛ منه يقرأ سطر البدء `first start of this boot` أو `restart N of this boot`.
+- `lock_lost`: علامة تُنشأ حين تخسر نسخة بلا طرفية القفل أول مرة في الإقلاع وتقول ذلك؛ الخسارات التالية صامتة.
+- `site.down`: الموقع رفض سطر قصة أو لم يرد بينما الإنترنت يعمل؛ يُقال مرة، ويزيل العلامة التفريغ الذي يسلّم كل المحتجز ويقول `site reachable again`.
+- `wifi.down`: الموقع رفض خانة الواي فاي؛ يُقال مرة، وتزيلها أول خانة مقبولة مع `wifi cell accepted again`.
+- `scan.down`: الموقع رفض قائمة مسح الواي فاي؛ يُقال مرة، وتزيلها أول قائمة مقبولة مع `wifi scan list accepted again`.
+- `log.down`: فشل إلحاق بالملف المحلي؛ تقوله أول دورة صحيحة للموقع، ويزيلها الإلحاق الناجح التالي.
+- `spool.dropped`: عدد الأسطر التي قصّها حد المخزون منذ آخر مرة وصلت فيها القصة كاملة؛ يُقال مع `outage story trimmed` ثم يُحذف.
+- `probe.fail`: علامة يرفعها قياس رفع لم يقبل هدفه بايتاته، لأن القياس يعمل في عملية فرعية لا يعود منها متغير؛ يقرؤها القرار الذي يليه ثم يمسحها القياس التالي.
+- `cmd`: أمر من قائمة الواي فاي في الموقع، سطر واحد `<uptime_seconds>\t<epoch>\t<cmd>\t<key>\t<blob>`، يكتبه ناقل الموقع على الجهاز (بصلاحية 0600) ويحذفه الحارس لحظة قراءته قبل أن يعمل به شيء؛ والذي تركه تشغيل سابق يُقرأ في رأس الحلقة الأول ويُجاب بـ `failed expired` حين يكون أقدم من 60 ثانية بمدة التشغيل، وإلا يُنفَّذ. شكل السطر والحالات في [integration.md](integration.md).
+- `cmd.ready`: علامة فارغة على أن الحارس الذي يحمل القفل يمسك إشارة `SIGUSR1`؛ تُنشأ بعد ربح القفل مباشرة وتُزال عند كل خروج. لا يرسل الناقل الإشارة إلا ما دامت موجودة، فالحارس من قبل قناة الأوامر لا تصله إشارة أبداً (الإشارة تقتله).
+- `cmd.last`: ختم آخر أمر استُهلك؛ والأمر الذي يُسلَّم مرة ثانية بالختم نفسه يُتجاهَل.
+- `cmd.answer`: آخر جواب على أمر، يُحفَظ حتى يأخذه الموقع بـ 2xx ويُعاد إرساله في كل دورة صحيحة حتى ذلك.
+- `join_id`: `<id>\t<hexssid>` ما دام انضمام من الموقع غير مكتمل (المدخل موجود وكلمة السر لم تثبت بعد)؛ يُزال متى حمل `/etc/awacs.networks` السطر. والحارس المعاد تشغيله يقرؤه أولاً ويزيل المدخل غير المكتمل: `removed an unfinished join of NAME left by the previous run`.
 
-بجانب السجل لا تحت `RUN_DIR`: `${LOG_FILE}.t`، الملف المؤقت للتدوير.
+بجانب السجل لا تحت `RUN_DIR`: `${LOG_FILE}.t`، الملف المؤقت للتدوير؛ و`${LOG_FILE}.reboot` و`${LOG_FILE}.spool` و`${LOG_FILE}.reboots`، ذاكرة إعادة التشغيل الذاتية التي يجب أن تنجو من إعادة التشغيل (انظر `REBOOT_AFTER_MIN`).
+
+### مفتاح الجهاز والشبكات المنضمة
+
+ملفان لا مفتاح لهما يعيشان في `/etc`، كلاهما لـ `root` فقط (بصلاحية 0600)، وكلاهما ينشئه الحارس نفسه، وكلاهما خارج `wpa_supplicant.conf` ومخزن NetworkManager في `/etc` كي تصدق قاعدة عدم الكتابة.
+
+`/etc/awacs.key` هو مفتاح الجهاز: 64 خانة ست عشرية صغيرة (32 بايتاً عشوائياً من `openssl rand -hex 32`)، يُصنع مرة واحدة في أول بدء يجد `openssl`، ويُسجَّل في الموقع بوصفه `file=wifi_key` عند كل بدء ثم في الدورة الصحيحة الثالثة ثم مرة كل دقيقة صحيحة حتى رد 2xx واحد في الإقلاع. كلمة السر التي تُكتب على الموقع تُشفَّر بمفاتيح مشتقة منه وتُفتح على الجهاز؛ والوصفة في [integration.md](integration.md). ولا تُكتب القيمة في سجل أو سطر موقع أبداً. يرفض الموقع مفتاحاً مختلفاً ما لم يحمل الطلب إثباتاً مصنوعاً بالمفتاح السابق، ولا يرسله الحارس إلا حين يحمل `/etc/awacs.key.prev` ذاك المفتاح السابق؛ والجهاز الذي فقد مفتاحه (بطاقة أُعيد تثبيتها) يُقرَن من جديد مرة من صفحة الإدارة في الموقع (`admin/wifi.php?reset_key=1` في لوحة المشرف)، ويُقال الرفض مرة في الإقلاع: `the site holds another key for this camera (a reflash?) - open admin/wifi.php?reset_key=1 once from your phone, then join from the menu works again`. والصفحة المسمّاة في ذلك السطر تخص لوحة المشرف لا المستقبِلَين المرفقَين؛ وعلى مستقبِل تستضيفه أنت أعد الإقران بحذف `private/wifi.key` في مجلد الجهاز فيُؤخذ التسجيل التالي تسجيلاً أول. وبلا `openssl` لا يُصنع المفتاح ويتعطل `join` من القائمة، ويُقال ذلك مرة: `openssl is missing - a password typed on the site cannot be opened here, join from the menu is off`. تمر المفاتيح المشتقة في قائمة وسائط `openssl` طوال كل استدعاء، وتظهر لـ `root` في `ps` على هذا الجهاز ذي المستخدم الواحد؛ وهذا مقبول ومذكور لا مخفي. أما كلمة السر نفسها فلا تدخل قائمة وسائط أبداً.
+
+`/etc/awacs.networks` يحمل الشبكات المنضمة من الموقع، سطر لكل شبكة، `<hexssid>\t<psk>` (اسم الشبكة بالست عشري الصغير، فجدولة، فكلمة السر)؛ وكلمة السر الأحدث للاسم نفسه تحل محل السطر الأقدم. لا يُكتب السطر إلا بعد أن توصل الشبكة الإنترنت، وهذا ما يثبت كلمة السر. وعند كل بدء، وبعد درجات الإنعاش التي تفقد مدخلات وقت التشغيل (إعادة تشغيل `supplicant` في `L2` و`L3` على `wpa`، وإعادة تشغيل NetworkManager في `L3` على `nm`)، تُعاد إضافة كل سطر لا ملف تعريف لاسمه بعد: على `wpa` في `supplicant` الحي (ولا `save_config` أبداً)، وعلى `nm` ملف المفاتيح `awacs-joined-<hexssid>` تحت `/run/NetworkManager/system-connections` باتصال تلقائي مفعّل. ويُقال ذلك مرة: `re-added N networks joined from the site: NAME, ...`. ولا يزيل سطراً إلا أنت: احذفه وأعد تشغيل الحارس، وعلى `nm` أيضاً `sudo rm /run/NetworkManager/system-connections/awacs-joined-<hexssid>.nmconnection; sudo nmcli connection reload`. و`install.sh --uninstall --purge` لا يمس هذين الملفين.
+
+أسطر السجل:
+
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] device key made for passwords typed on the site (/etc/awacs.key)` (مرة، في أول بدء يصنعه)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] device key registered with the site - a password typed there can be opened here` (مرة في الإقلاع، عند أول 2xx)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] the site holds another key for this camera (a reflash?) - open admin/wifi.php?reset_key=1 once from your phone, then join from the menu works again` (مرة في الإقلاع)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] could not write /etc/awacs.key - join from the menu is off`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] joined ${name} - password kept in /etc/awacs.networks, re-added at every start`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] joined ${name} but /etc/awacs.networks could not be written - the network lasts until the next start`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] re-added ${n} networks joined from the site: ${names}`
 
 ### SCAN_TTL
 
@@ -1149,10 +1359,12 @@ RUN_DIR=/dev/shm/awacs
 
 أسطر السجل:
 
-- `[WARN][${dd/mm HH:MM:SS}] scan failed - using previous results (if any)`
-- `[WARN][${dd/mm HH:MM:SS}] radio heard nothing on ${count} scans in a row - previous results dropped`
-- `[DEBUG][${dd/mm HH:MM:SS}] scan: ${used}/${tries} tries used`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] scan failed - using previous results (if any)`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] radio heard nothing on ${count} scans in a row - previous results dropped`
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [DEBUG] scan: ${used}/${tries} tries used`
 - `raw scan (cached ${SCAN_TTL}s)` (النصف الإنجليزي من صف `scan` في شاشة `help`)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] fault looks on the device: the radio hears no network at all - recovery follows` (علامة المسح الفارغ في تصنيف الإنعاش؛ مرة لكل انقطاع)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] scan heard ${count} networks: ${SSID} ${dBm}, ... | known on the air: ${SSID}, ... | stored, not heard: ${SSID}, ...` (داخل الإنعاش مرة لكل صورة مختلفة في الانقطاع)
 
 متى تغيّره: ارفعه (60 إلى 120) على جهاز لا يتحرك أبداً لتقليل عدد المسوح خارج القناة. اخفضه (10 إلى 15) على جهاز يتحرك وتظهر الشبكات وتختفي حوله خلال دقيقة.
 
@@ -1174,13 +1386,17 @@ SCAN_TTL=15
 
 الوحدة: أسطر
 
-كم سطراً موجهاً إلى الموقع يُحفظ ما دام تسليمه متعذراً. حين يكون سطر قصة موجهاً إلى موقع التقارير بينما آخر حكم للحارس أن الإنترنت مقطوع، أو حين يفشل إرسال حي، يُلحق السطر بـ `${RUN_DIR}/spool` بصيغة الموقع `[LEVEL] AWACS: message, dd/mm/yyyy hh:mm:ss AM/PM.` ويُسلَّم بترتيبه حين يعود الإنترنت. أثناء الانقطاع يُعد الملف بعد كل إلحاق؛ وفوق `SPOOL_CAP` يُعاد كتابته سطره الأول متبوعاً بأحدث `SPOOL_CAP` ناقص 1 سطراً. السطر الأول عادةً افتتاح الانقطاع ويحمل وقت بدايته، فيُحفظ دائماً؛ وما يضيع هو وسط القصة. يجري القص نفسه بعد التفريغ، الذي يرسل سطراً سطراً ويتوقف عند أول فشل ويدمج الباقي غير المرسل أمام أي أسطر وصلت في الأثناء.
+كم سطراً موجهاً إلى الموقع يُحفظ ما دام تسليمه متعذراً. حين يكون سطر قصة موجهاً إلى موقع التقارير بينما آخر حكم للحارس أن الإنترنت مقطوع، أو حين يفشل إرسال حي، يُلحق السطر بـ `${RUN_DIR}/spool` بصيغة الموقع `yyyy-mm-ddThh:mm:ss+hh:mm [LEVEL][awacs] message` ويُسلَّم بترتيبه حين يعود الإنترنت. أثناء الانقطاع يُعد الملف بعد كل إلحاق من الحارس نفسه (المرسِلون في الخلفية يلحقون ويتركون القص للحارس)؛ وفوق `SPOOL_CAP` يُعاد كتابته سطره الأول متبوعاً بأحدث `SPOOL_CAP` ناقص 1 سطراً، ويُجمع ما سقط في `${RUN_DIR}/spool.dropped` ليُقال مرة بعد أن تصل القصة كاملة. السطر الأول عادةً افتتاح الانقطاع ويحمل وقت بدايته، فيُحفظ دائماً؛ وما يضيع هو وسط القصة. يجري القص نفسه بعد التفريغ، الذي يرسل سطراً سطراً ويتوقف عند أول فشل ويدمج الباقي غير المرسل أمام أي أسطر وصلت في الأثناء.
 
-لا يهم إلا حين يُضبط `SITE_URL` ويكون `LOG_TARGET` هو `both` أو `remote`؛ وإلا لا يُخزَّن شيء أبداً. يُرسل المخزون عند بدء حارس يجد الإنترنت يعمل، وفي الدورة السليمة الثالثة المتتالية، وفي كل دورة سليمة ثلاثين بعدها (الدورة السليمة نحو 13 ثانية بالافتراضيات، أي بعد نحو 40 ثانية ثم كل نحو ست دقائق) ما بقيت أسطر، وكل 300 ثانية في وضع المراقبة فقط. الإرسال الذي يفشل والإنترنت يعمل يُلحق في الخلفية بلا قص؛ ويلحق الحد به عند الإلحاق أو التفريغ التالي بلا إنترنت. الأسطر المخزَّنة تستعمل `SITE_LANG` وختم `SITE_TZ`. يعيش الملف على تخزين في الذاكرة ويضيع عند إعادة التشغيل، ولهذا يُكتب السطر المعلن عن إعادة التشغيل محلياً فقط. الحارس الذي يُقتل في منتصف تفريغ يترك `spool.sending`؛ ويعيد البدء التالي تلك اللقطة كاملة أمام الأسطر الأحدث، فقد تُرسل بضعة أسطر أُرسلت قبل القتل مرتين.
+لا يهم إلا حين يُضبط `SITE_URL` ويكون `LOG_TARGET` هو `both` أو `remote`؛ وإلا لا يُخزَّن شيء أبداً. يُرسل المخزون عند بدء حارس يجد الإنترنت يعمل، وفي الدورة السليمة الثالثة المتتالية، وفي كل دورة سليمة ثلاثين بعدها (الدورة السليمة نحو 13 ثانية بالافتراضيات، أي بعد نحو 40 ثانية ثم كل نحو ست دقائق) ما بقيت أسطر، وكل 300 ثانية في وضع المراقبة فقط. وتفريغ الإيقاف نفسه محدود بستة أسطر أو 20 ثانية كي ينتهي الإيقاف داخل `TimeoutStopSec` في الوحدة؛ وما بقي ينتظر البدء التالي، ويسجّل الملف المحلي `stop drain reached its budget - the remaining held lines wait for the next start`. الإرسال الذي يفشل والإنترنت يعمل يُلحق في الخلفية بلا قص، ويُقال الرفض مرة في كل نوبة؛ ويلحق الحد به عند الإلحاق أو التفريغ التالي من الحارس نفسه. الأسطر المخزَّنة تستعمل `SITE_LANG` وختم `SITE_TZ`. يعيش الملف على تخزين في الذاكرة ويضيع عند إعادة التشغيل؛ ولهذا ينسخه الحارس إلى بطاقة الذاكرة قبل إعادة التشغيل التي يأمر بها هو (`${LOG_FILE}.spool`) ويعيده البدء التالي أمام أسطره، أما انقطاع الكهرباء فيضيّعه. بعد كل تفريغ يسلّم أسطراً محتجزة يقول الحارس كم سطراً سلّم ومن أي وقت إلى أي وقت، في المقدمة بعدها، فتقف فوقه في الصفحة بأوقاتها. الحارس الذي يُقتل في منتصف تفريغ يترك `spool.sending`؛ ويعيد البدء التالي تلك اللقطة كاملة أمام الأسطر الأحدث، فقد تُرسل بضعة أسطر أُرسلت قبل القتل مرتين.
 
 أسطر السجل:
 
-- `[${LEVEL}] AWACS: ${text}, ${dd/mm/yyyy hh:mm:ss AM|PM}.` (شكل كل سطر مخزَّن)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [${LEVEL}][awacs] ${text}` (شكل كل سطر مخزَّن)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] outage story trimmed - ${n} lines dropped from its middle (the spool keeps ${SPOOL_CAP})` (بعد تفريغ سلّم القصة كاملة، مرة لكل انقطاع؛ العدد مجموع كل قصّ فيه)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [INFO] delivered ${n} held lines stamped ${HH:MM} to ${HH:MM} - they stand above this line with their own times` (بعد كل تفريغ سلّم أسطراً محتجزة؛ وللسطر الواحد `delivered 1 held line stamped ${HH:MM} - it stands above this line with its own time`؛ ولا يُكتب في تفريغ الإيقاف ولا في تفريغ بدء لم يُحتجز فيه سوى أسطر البدء نفسها)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [OK] site reachable again - delivered ${n} held lines stamped ${HH:MM} to ${HH:MM}, they stand above this line with their own times` (التفريغ الذي يختم نوبة رفض الموقع)
+- `${yyyy-mm-ddThh:mm:ss+hh:mm} [WARN] site did not take the log line (${http ${code}|no reply in 4 s}) - holding lines, delivery retried about every ${m} min` (مرة في كل نوبة رفض؛ يُحتجز التحذير خلف السطر المرفوض)
 
 متى تغيّره: ارفعه حين يجب أن يتلقى الموقع قصة الانقطاع الطويل كاملة لا سطرها الافتتاحي وشوطها الأخير. اخفضه لتقصير دفعة إرسالات التعويض بعد الإنعاش.
 
@@ -1198,14 +1414,14 @@ SPOOL_CAP=200
 
 تُقرأ هذه من بيئة الحارس لا من ملف الإعدادات. تُضبط في المشغّل: أسطر `Environment=` في الملف الإضافي لوحدة systemd، أو سطر `rc.local` قبل حلقة الإطلاق.
 
-`DEVICE_ID`: اسم الجهاز على موقع التقارير، يُستعمل في مسار الموقع `${SITE_URL}/${DEVICE_ID}/${SITE_API}` وفي سطر البدء وفي `status`. يُحل عند كل استعمال بالترتيب المذكور تحت [DEVICE_ID](#device_id): المتغير `DEVICE_ID`؛ وإن كان فارغاً أو غير مضبوط فأول سطر غير فارغ من `/tmp/device_id`؛ ويجب أن تطابق القيمة `^[A-Za-z0-9_-]{1,32}$` وإلا اسم المضيف المختصر، وإن فشل هو أيضاً فالكلمة `device`. قيمة المتغير التي تفشل الفحص تذهب مباشرة إلى اسم المضيف؛ ولا يُستشار ملف `/tmp` إلا حين يكون المتغير فارغاً. المصدران المقصودان هما سطر `export` في `rc.local` والملف الإضافي `awacs.service.d/10-device-id.conf` الذي يكتبه `install.sh`. ليس مفتاح ضبط ولا يُفحص عند التحميل؛ لكن لأن ملف الإعدادات يُنفَّذ في الصدفة نفسها، فتعيين `DEVICE_ID=` فيه يُرى كقيمة البيئة تماماً، وليس ذلك المكان الموثّق له.
+`DEVICE_ID`: اسم الجهاز على موقع التقارير، يُستعمل في مسار الموقع `${SITE_URL}/${DEVICE_ID}/${SITE_API}` وفي سطر البدء وفي `status`. يُحل عند كل استعمال بالترتيب المذكور تحت [DEVICE_ID](#device_id): المتغير `DEVICE_ID`؛ وإن كان فارغاً أو غير مضبوط فأول سطر غير فارغ من `/tmp/device_id`؛ ويجب أن تطابق القيمة `^[A-Za-z0-9_-]{1,32}$` وإلا اسم المضيف المختصر، وإن فشل هو أيضاً فالكلمة `device`. قيمة المتغير التي تفشل الفحص تذهب مباشرة إلى اسم المضيف ويُقال ذلك مرة عند البدء بسطر `device id not usable (DEVICE_ID: ${value}) - reporting as ${id}`؛ ولا يُستشار ملف `/tmp` إلا حين يكون المتغير فارغاً؛ وتغيّر الهوية أثناء العمل يُقال بسطر `device id changed: ${old} -> ${new} - reporting under ${new} from now`. المصدران المقصودان هما سطر `export` في `rc.local` والملف الإضافي `awacs.service.d/10-device-id.conf` الذي يكتبه `install.sh`. ليس مفتاح ضبط ولا يُفحص عند التحميل؛ لكن لأن ملف الإعدادات يُنفَّذ في الصدفة نفسها، فتعيين `DEVICE_ID=` فيه يُرى كقيمة البيئة تماماً، وليس ذلك المكان الموثّق له.
 
-`AWACS_IF`: اسم واجهة الواي فاي؛ حين يُضبط وغير فارغ يحل محل الاختيار التلقائي (المتصلة، وإلا المرفوعة، وإلا الموجودة، وإلا `wlan0`). لا يُفحص؛ والاسم غير الموجود يُبلَّغ عنه مرة عند البدء بسطر قصة، `[ERROR][${dd/mm HH:MM:SS}] interface ${IF} not present - is the WiFi hardware alive?`، ويتابع الحارس. `check` و`help` بلا `root` يستعملان `wlan0` دائماً.
+`AWACS_IF`: اسم واجهة الواي فاي؛ حين يُضبط وغير فارغ يحل محل الاختيار التلقائي (المتصلة، وإلا المرفوعة، وإلا الموجودة، وإلا `wlan0`). لا يُفحص؛ والاسم غير الموجود يُبلَّغ عنه مرة عند البدء بسطر قصة، `${yyyy-mm-ddThh:mm:ss+hh:mm} [ERROR] interface ${IF} not present - is the WiFi hardware alive?`، ويتابع الحارس. `check` و`help` بلا `root` يستعملان `wlan0` دائماً.
 
-`AWACS_CONF`: مسار ملف الإعدادات، الافتراضي `/etc/awacs.conf`؛ الملف الغائب يُتجاوز بصمت؛ وقواعد الملكية والصلاحية نفسها تنطبق على أي مسار.
+`AWACS_CONF`: مسار ملف الإعدادات، الافتراضي `/etc/awacs.conf`؛ الملف الغائب يُتجاوز ويُقال مرة عند البدء بسطر `settings file ${AWACS_CONF} not found - running on built-in defaults (no site, no emergency networks)`؛ وقواعد الملكية والصلاحية نفسها تنطبق على أي مسار، وأسطر رفضها تسمّي المسار نفسه.
 
-`AWACS_DEBUG`: يضبط قيمة `DEBUG` قبل قراءة ملف الإعدادات، الافتراضي `yes`؛ ولأن الملف يُقرأ بعده، يحل سطر `DEBUG=` في الملف محله، فلا يُسكت متغير البيئة أسطر `DEBUG` إلا حين يترك الملف `DEBUG` غير مضبوط.
+`AWACS_DEBUG`: يضبط قيمة `DEBUG` قبل قراءة ملف الإعدادات، الافتراضي `no`؛ ولأن الملف يُقرأ بعده، يحل سطر `DEBUG=` في الملف محله، فلا يشغّل متغير البيئة أسطر `DEBUG` إلا حين يترك الملف `DEBUG` غير مضبوط.
 
-`AWACS_CLI` و`AWACS_DAEMONIZED`: ليسا إعدادين للمستخدم. الأول يضبطه الحارس متغيراً محلياً أثناء أوامر الطرفية لتبقى تحذيرات المسح المرفوعة أثناء أمر يدوي في السجل المحلي بدل الذهاب إلى الموقع؛ والفحص لا يتحقق إلا من أن المتغير غير فارغ، فتصديره في بيئة الحارس يعطي الأثر نفسه على الحارس: لا تفعل ذلك، وإلا بقيت تحذيرات المسح الخاصة بالحارس محلية أيضاً. الثاني تضبطه الراية `-d` حين تعيد إطلاق السكربت في الخلفية عبر `setsid` حتى لا يعيد الابن الإطلاق من جديد؛ ويأخذ الأب المسار السريع عند اختيار النظام ويتخطى انتظار الإقلاع المبكر، الذي يدفعه الابن بعدها مرة واحدة؛ ولا يخرج حارس المراقبة فقط الذي بدأ بهذه الطريقة ليُعاد تشغيله بعد ظهور `nmcli`، لأن مسار `-d` بلا معيد تشغيل.
+`AWACS_CLI` و`AWACS_DAEMONIZED`: ليسا إعدادين للمستخدم. الأول يضبطه الحارس متغيراً محلياً أثناء أوامر الطرفية لتبقى تحذيرات المسح المرفوعة أثناء أمر يدوي في السجل المحلي بدل الذهاب إلى الموقع؛ والفحص لا يتحقق إلا من أن المتغير غير فارغ، فتصديره في بيئة الحارس يعطي الأثر نفسه على الحارس: لا تفعل ذلك، وإلا بقيت تحذيرات المسح الخاصة بالحارس محلية أيضاً. الثاني تضبطه الراية `-d` حين تعيد إطلاق السكربت في الخلفية عبر `setsid` حتى لا يعيد الابن الإطلاق من جديد؛ ويأخذ الأب المسار السريع عند اختيار النظام ويتخطى انتظار الإقلاع المبكر، الذي يدفعه الابن بعدها مرة واحدة؛ ولا يخرج حارس المراقبة فقط الذي بدأ بهذه الطريقة ليُعاد تشغيله بعد ظهور `nmcli`، لأن مسار `-d` بلا معيد تشغيل؛ ويقول سطر حكم المراقبة تحته `then restart AWACS by hand (started with -d)`، وسطر الخروج غير المتوقع `no launcher under -d, start it again`.
 
 </div>

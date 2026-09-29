@@ -11,19 +11,30 @@ answers that path for every device id and keeps each device's files apart:
 
     POST file=log/log.txt&data=<line>   append <line> + "\\n" to data/<id>/log/log.txt;
                                         the file is kept under 256 KB (oldest lines go)
+    POST file=tmp/wifi_scan.tmp&data=<list> overwrite data/<id>/tmp/wifi_scan.tmp (the networks the radio heard)
     POST file=tmp/wifi.tmp&data=<cell>  overwrite data/<id>/tmp/wifi.tmp atomically
+    POST file=tmp/wifi_state.tmp&data=<answer> overwrite data/<id>/tmp/wifi_state.tmp (the
+                                        device's answer to a site command: scan, switch, join)
+    POST file=wifi_key&data=<64 hex>    register the device key that opens a password typed
+         [&proof=<hex>]                 on a site: data/<id>/private/wifi.key, mode 0600. The
+                                        first key is taken; the same key again answers 200; a
+                                        different key needs proof = HMAC-SHA256(old key bytes,
+                                        new key hex) or gets 403 "Error: proof required";
+                                        anything but 64 lowercase hex is 400 "Error: bad key"
     POST without a `file` field         400 "Error: no operation" - awacs.sh uses this
                                         exact reply as its "site reachable" check and as
                                         the target of its upload-speed probe (a raw body)
     POST file=<anything else>           403 "Error: forbidden file"
     other paths                         404; GET on any path 400
 
-There is NO authentication: anyone who can reach the port can append to the log and
-overwrite the WiFi cell of any device id. Run it behind a firewall, a VPN, or a reverse
-proxy that adds auth. SECURITY.md in the repository says what that means in practice.
+There is NO authentication: anyone who can reach the port can append to the log, overwrite
+the WiFi cell of any device id and, before the device does, register a key for it. Run it
+behind a firewall, a VPN, or a reverse proxy that adds auth. SECURITY.md in the repository
+says what that means in practice.
 """
 
 import argparse
+import hmac
 import os
 import re
 import sys
@@ -35,7 +46,14 @@ from urllib.parse import parse_qs, urlsplit
 LOG_CAP = 256 * 1024        # bytes kept in log/log.txt; trimmed once the file passes 2x
 MAX_BODY = 8 * 1024 * 1024  # an upload probe is PROBE_KB kilobytes (200 KB by default)
 MAX_DATA = 64 * 1024        # one log line or one WiFi cell
-ALLOWED = {"log/log.txt": "append", "tmp/wifi.tmp": "overwrite"}
+ALLOWED = {
+    "log/log.txt": "append",
+    "tmp/wifi.tmp": "overwrite",
+    "tmp/wifi_scan.tmp": "overwrite",
+    "tmp/wifi_state.tmp": "overwrite",
+}
+KEY_FILE = os.path.join("private", "wifi.key")   # the device key: never a name the device can write as a file
+KEY_RE = re.compile(r"^[0-9a-f]{64}$")
 DEVICE_PATH = re.compile(r"^/([A-Za-z0-9_-]{1,32})/receiver\.php$")
 WRITE_LOCK = threading.Lock()  # one process serves everything, so one lock is enough
 
@@ -54,6 +72,37 @@ def write_overwrite(path: str, data: str) -> None:
         except OSError:
             pass
         raise
+
+
+def register_key(path: str, key: str, proof: str):
+    """Store the device key; return (code, text). The first key is taken, the same key again
+    is a 200 with no write, a different key needs proof = HMAC-SHA256(old key raw bytes,
+    new key hex as ASCII) so an unauthenticated POST cannot swap it."""
+    if not KEY_RE.match(key):
+        return 400, "Error: bad key\n"
+    old = ""
+    if os.path.isfile(path):
+        with open(path, "r", encoding="ascii", errors="replace") as handle:
+            old = handle.read().strip()
+    if old:
+        if hmac.compare_digest(old, key):
+            return 200, "OK\n"
+        want = hmac.new(bytes.fromhex(old), key.encode("ascii"), "sha256").hexdigest()
+        if not re.match(r"^[0-9a-fA-F]{64}$", proof) or not hmac.compare_digest(want, proof.lower()):
+            return 403, "Error: proof required\n"
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".key.", dir=os.path.dirname(path))   # mkstemp: 0600
+    try:
+        with os.fdopen(fd, "w", encoding="ascii", newline="") as handle:
+            handle.write(key + "\n")
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    return 200, "OK\n"
 
 
 def write_append(path: str, line: str) -> None:
@@ -127,6 +176,18 @@ class Handler(BaseHTTPRequestHandler):
         data = form.get("data", [""])[0]
         if len(data.encode("utf-8")) > MAX_DATA:
             self._reply(400, "Error: too large\n")
+            return
+        if rel == "wifi_key":   # a registration, not a file write: before the whitelist
+            try:
+                with WRITE_LOCK:
+                    code, text = register_key(os.path.join(self.server.data_root, device, KEY_FILE),
+                                              data, form.get("proof", [""])[0])
+            except OSError as exc:
+                self.log_error("key write failed for %s: %s", device, exc)
+                code, text = 500, "Error: write failed\n"
+            if code == 403:
+                self.log_error("key registration refused for %s (proof missing or wrong)", device)
+            self._reply(code, text)
             return
         mode = ALLOWED.get(rel)
         if mode is None:  # exact-path whitelist: traversal is moot, anything else is 403

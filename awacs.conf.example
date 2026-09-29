@@ -58,7 +58,7 @@
 # ---- Behaviour / السلوك ------------------------------------------------------------
 # OPEN_NETWORKS="yes"          # "yes" | "no" - open networks as the last resort
 # STEALTH_MODE="no"            # "yes" | "no" - drop incoming ping, stop avahi
-# DEBUG="yes"                  # "yes" | "no" - DEBUG lines in the local log
+# DEBUG="no"                   # "yes" | "no" - DEBUG lines in the local log
 
 # ---- Files / الملفات ---------------------------------------------------------------
 # LOG_FILE=/var/log/awacs.log  # absolute path

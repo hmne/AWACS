@@ -10,7 +10,7 @@ AWACS سكربت واحد، `awacs.sh`، زائد ملف إعدادات اختي
 - `bash` 4 أو أحدث لـ `awacs.sh`؛ و`bash` 5 للوحة الطرفية الاختيارية `tools/awacs-tui.sh`.
 - Raspberry Pi OS أو أي توزيعة مشتقة من Debian فيها `apt-get`: صورة `dhcpcd` مع `wpa_supplicant` (النظام `wpa`) أو صورة NetworkManager (النظام `nm`). بلا `apt-get` يكتفي المعالج بالإبلاغ عن الأدوات الناقصة، ويسجّل الحارس `no apt-get on this system - install manually:` متبوعاً بأسماء الأدوات.
 - الأدوات: `iw` و`ip` و`ping` و`curl` و`awk` و`sed` و`grep` و`pgrep` و`rfkill` و`flock` و`timeout` و`stat` و`date` و`modprobe`، و`wpa_cli` أو `nmcli` بحسب النظام؛ و`iwlist` و`wget` بديلان اختياريان. يثبّت المعالج الأدوات الناقصة من حزم Debian: `iw` و`iproute2` و`iputils-ping` و`curl` و`mawk` و`sed` و`grep` و`procps` و`rfkill` و`util-linux` و`coreutils` و`kmod`، و`wpasupplicant` أو `network-manager`.
-- منفذ خارجي إلى `8.8.8.8` و`1.1.1.1` (ICMP)، وإلى `http://connectivitycheck.gstatic.com`، وإلى الموقع عبر HTTP أو HTTPS حين يُضبط موقع. الإجراءات المميّزة التي ينفّذها الحارس مذكورة في [SECURITY.md](../../SECURITY.md).
+- منفذ خارجي إلى `8.8.8.8` و`1.1.1.1` (ICMP)، وإلى `http://connectivitycheck.gstatic.com`، وإلى الموقع عبر HTTP أو HTTPS حين يُضبط موقع. الإجراءات المميّزة التي ينفّذها الحارس مذكورة في [SECURITY.md](../../SECURITY.md) (بالإنجليزية).
 
 ## المعالج
 
@@ -24,7 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/hmne/AWACS/main/install.sh | sudo b
 
 أو من نسخة مستنسخة: `sudo ./install.sh`. يستعمل المعالج قوائم `whiptail` حين تكون موجودة وأسئلة نصية بسيطة وإلا، ويحتاج طرفية ما لم يُعطَ `--yes`. أمر السطر الواحد ينزّل `awacs.sh` و`SHA256SUMS` من عنوان الإصدار ويتوقف حين لا تتطابق بصمة التحقق؛ والنسخة المستنسخة تُثبَّت من الملف المحلي، ويُتحقق منها مقابل `SHA256SUMS` حين يكون هذا الملف بجانبها. الخطوات:
 
-1. اللغة: الإنجليزية أو العربية لنصوص المعالج نفسه. السجل المحلي إنجليزي في الحالتين.
+1. اللغة: الإنجليزية أو العربية لنصوص المعالج نفسه؛ و`--log-lang` و`--site-lang` يضبطان لغتَي اللوق كلاً على حدة.
 2. الأدوات الناقصة: تُفحص قائمة أدوات النظام وتُثبَّت الحزم الناقصة بـ `apt-get` بعد موافقتك. إن رفضت، يحاول الحارس مرة واحدة بنفسه بعد اتصاله بالإنترنت.
 3. معرّف الجهاز: حروف وأرقام و`_` و`-`، حتى 32 حرفاً. الافتراضي هو معرّف تثبيت سابق، وإلا اسم المضيف المختصر.
 4. وجهة السجل: `local` (الملف فقط) أو `both` (الملف والموقع) أو `remote` (الموقع؛ ويحتفظ الملف بـ `WARN` و`ERROR` والأسطر المحلية فقط)؛ ويسأل `both` و`remote` عن عنوان الموقع ويتحققان أن `${SITE_URL}/${DEVICE_ID}/${SITE_API}` يرد بـ HTTP 400، وحين لا يرد يُعرض عليك إدخال عنوان آخر أو الإبقاء على العنوان كما كتبته أو التسجيل المحلي. بلا موقع يسأل المعالج بعدها عن عنوان قياس اختياري، ومع موقع عن المنطقة الزمنية لأختام سجل الموقع.
@@ -141,7 +141,7 @@ sudo systemctl enable --now awacs
 
 <div dir="rtl">
 
-`Restart=always` مع `RestartSec=10` هو حلقة `rc.local` مكتوبة كوحدة. يخرج الحارس برمز 0 عمداً في حالتين ويتوقع إعادة تشغيله: حين يفقد قفل النسخة الوحيدة، وحين تُثبَّت `nmcli` للتو على صورة NetworkManager كانت تفتقدها. `StartLimitIntervalSec=0` يمنع systemd من الاستسلام بعد دفعة من هذه الخروجات. تبدأ الوحدة بعد `network-pre.target` لا خلف `network-online.target`: عمل الحارس أن يجعل الشبكة تعمل. `TimeoutStopSec=40` يترك مجالاً لـ `nmcli -w 5` داخل معالج الإيقاف. يعرض `journalctl -u awacs` أحداث البدء والإيقاف؛ والحارس نفسه يسجّل في ملفه. التفاصيل في [systemd/README.md](../../systemd/README.md).
+`Restart=always` مع `RestartSec=10` هو حلقة `rc.local` مكتوبة كوحدة. يخرج الحارس برمز 0 عمداً في حالتين ويتوقع إعادة تشغيله: حين يفقد قفل النسخة الوحيدة، وحين تُثبَّت `nmcli` للتو على صورة NetworkManager كانت تفتقدها. `StartLimitIntervalSec=0` يمنع systemd من الاستسلام بعد دفعة من هذه الخروجات. تبدأ الوحدة بعد `network-pre.target` لا خلف `network-online.target`: عمل الحارس أن يجعل الشبكة تعمل. `TimeoutStopSec=40` يترك مجالاً لـ `nmcli -w 5` داخل معالج الإيقاف ولتفريغ المخزون عند الإيقاف، المحدود بستة أسطر أو 20 ثانية. يعرض `journalctl -u awacs` أحداث البدء والإيقاف؛ والحارس نفسه يسجّل في ملفه. التفاصيل في [systemd/README.md](../../systemd/README.md).
 
 ### rc.local
 
@@ -178,19 +178,21 @@ sudo tail -f /var/log/awacs.log
 </div>
 
 ```text
-[INFO][20/09 10:15:04] AWACS 1.0 starting on wlan0 (device mydevice)
-[INFO][20/09 10:15:04] reporting: local | probe: none - signal mode | wifi cell: auto
+2026-09-20T10:15:04+03:00 [INFO] AWACS 1.0 starting on wlan0 (device mydevice) - wpa backend, first start of this boot, up 52 s
+2026-09-20T10:15:04+03:00 [INFO] reporting: local | probe: none - signal mode | wifi cell: auto
+2026-09-20T10:15:05+03:00 [INFO] running with: signal mode (no probe target - networks chosen by signal), reboot after 30 min wedged, wifi cell off (no SITE_URL), 2 stored networks, 0 emergency, open networks yes, stamps in the device zone
+2026-09-20T10:15:08+03:00 [OK] online at start via HomeNet
 ```
 
 <div dir="rtl">
 
-مع موقع، يسمّي السطر الثاني الموقع وهدف القياس بدل `none - signal mode`. تضيف صورة NetworkManager السطر `NetworkManager backend - AWACS supervises it (full capability)`. أما السطر `NetworkManager image but AWACS cannot drive it (unmanaged/no nmcli) - monitoring only` فيعني أن الواجهة خارج الإدارة أو أن `nmcli` ناقص؛ ويكتفي الحارس بالمراقبة حتى يُصلَح ذلك. والسطر `interface ${IF} not present - is the WiFi hardware alive?` يعني أن الواجهة المكتشفة غير موجودة؛ اضبط `AWACS_IF` في بيئة المشغّل.
+مع موقع، يسمّي السطر الثاني الموقع وهدف القياس بدل `none - signal mode`. تضيف صورة NetworkManager السطر `NetworkManager backend - AWACS supervises it (full capability)`. أما السطر الذي يبدأ بـ `NetworkManager image but AWACS cannot drive it:` فيسمّي السبب والعلاج (`nmcli is missing - will install it once online and restart`، أو `wlan0 is unmanaged by NetworkManager - fix unmanaged-devices in NetworkManager.conf and restart AWACS`) وينتهي بـ `- monitoring only`؛ ويكتفي الحارس بالمراقبة حتى يُصلَح ذلك. والسطر `interface ${IF} not present - is the WiFi hardware alive?` يعني أن الواجهة المكتشفة غير موجودة؛ اضبط `AWACS_IF` في بيئة المشغّل.
 
 يطبع `status` صفاً لكل حقيقة: الجهاز (المعرّف والواجهة)، والنظام، والحارس (يعمل برقم عمليته، أو متوقف)، والشبكة، والإشارة، وعنوان IP، والموجّه (يرد أو لا يرد)، والإنترنت (متصل أو مقطوع)، والمشاهد (هل يعمل بث مباشر)، والرفع (معدل عدّادات النواة خلال ثلاث ثوانٍ). تسميات الصفوف إنجليزية؛ وعدد من القيم يحمل شرحاً عربياً بعد شرطة مائلة، ويسبق الصفوف سطر ملاحظة بالعربية.
 
-مع موقع مضبوط و`LOG_TARGET` على `both` أو `remote`، يصل سطر البداية إلى `<device-id>/log/log.txt` بجانب المستقبِل، ويُكتب `<device-id>/tmp/wifi.tmp` في أول دورة سليمة ويتجدد كل نحو 60 ثانية. وحين يبدأ الجهاز بلا إنترنت تنتظر السطور في المخزون المؤقت وتصل بعد أول 30 ثانية من إنترنت متحقَّق منه.
+مع موقع مضبوط و`LOG_TARGET` على `both` أو `remote`، يصل سطر البداية إلى `<device-id>/log/log.txt` بجانب المستقبِل، ويُكتب `<device-id>/tmp/wifi.tmp` في أول دورة سليمة ويتجدد كل نحو 60 ثانية. وحين يبدأ الجهاز بلا إنترنت تنتظر السطور في المخزون المؤقت وتصل بعد أول 30 ثانية من إنترنت متحقَّق منه، ويتبعها `delivered N held lines stamped HH:MM to HH:MM - they stand above this line with their own times`.
 
-سطر بداية يتكرر كل عشر ثوانٍ يعني أن الحارس يخرج فور بدئه وأن المشغّل يعيده؛ والسطور بين سطري بداية تعطي السبب. أما المشغّل الثاني فلا ينتج سطور بداية: النسخة الخاسرة تخرج صامتة وتُعاد بلا فائدة. تحقق أن طريقة واحدة فقط مثبَّتة بـ `systemctl is-enabled awacs` و`grep awacs.sh /etc/rc.local`.
+سطر بداية يتكرر كل عشر ثوانٍ يعني أن الحارس يخرج فور بدئه وأن المشغّل يعيده؛ والسطور بين سطري بداية تعطي السبب، وسطر البداية نفسه يعدّ الإعادات (`restart N of this boot`)، والخروج الذي لم يأمر به الحارس يُعلَن بـ `AWACS exited unexpectedly (status N, last command ...: ...) - the launcher restarts it in 10 s`. أما المشغّل الثاني فلا ينتج سطور بداية: النسخة الخاسرة تقول `another AWACS already holds the lock (pid N) - two launchers are running it, keep one (the rc.local line or the systemd unit)` مرة في كل إقلاع، ثم تخرج وتُعاد بلا فائدة. تحقق أن طريقة واحدة فقط مثبَّتة بـ `systemctl is-enabled awacs` و`grep awacs.sh /etc/rc.local`.
 
 يمكن فحص قاعدة عدم الكتابة يدوياً: `sudo md5sum /etc/wpa_supplicant/wpa_supplicant.conf` (أو `ls -l /etc/NetworkManager/system-connections`) قبل التثبيت وبعد إعادة تشغيل الجهاز وبعد يوم. لا شيء يتغير.
 
@@ -223,7 +225,7 @@ sudo kill "$(head -1 /run/awacs/lock)"       # rc.local: الحلقة تعيد �
 
 ```sh
 sudo ./install.sh --uninstall            # يحذف الوحدة أو كتلة rc.local و awacs.sh؛ ويحتفظ بالإعدادات والسجل
-sudo ./install.sh --uninstall --purge    # ويحذف أيضاً /etc/awacs.conf و /var/log/awacs.log و /run/awacs
+sudo ./install.sh --uninstall --purge    # ويحذف أيضاً /etc/awacs.conf و /var/log/awacs.log و /run/awacs؛ ويبقى /etc/awacs.key و /etc/awacs.networks وذاكرة إعادة التشغيل بجانب السجل (.reboot و .spool و .reboots)
 ```
 
 <div dir="rtl">
@@ -238,6 +240,7 @@ sudo systemctl disable --now awacs && sudo rm -rf /etc/systemd/system/awacs.serv
 sudo rm -f /usr/local/bin/awacs.sh
 sudo rm -f /etc/awacs.conf             # يحمل كلمات سر نقاط الاتصال
 sudo rm -f /var/log/awacs.log
+sudo rm -f /etc/awacs.key /etc/awacs.networks   # مفتاح الجهاز والشبكات المنضمة من موقع؛ --purge يتركهما
 ```
 
 <div dir="rtl">
@@ -256,7 +259,10 @@ sudo rm -f /var/log/awacs.log
 | `/usr/local/bin/awacs.sh` | `root` 0755 | الحارس وصندوق الأدوات |
 | `/etc/awacs.conf` | `root` 0600 | إعداداتك، ومنها كلمات سر نقاط الاتصال |
 | `/var/log/awacs.log` | `root` 0600 | السجل المحلي، يُدوَّر عند `LOG_CAP` سطراً |
-| `/run/awacs/` | `root` 0700 | القفل ورقم العملية، وذاكرة المسح المؤقتة، وعدّاد المسوح الفارغة، والمخزون المؤقت، وعلامة الشبكة المؤقتة، وجسم القياس، وعلامة `apt` مرة كل إقلاع |
+| `/var/log/awacs.log.reboot` و`.spool` و`.reboots` | `root` 0600 | ذاكرة إعادة التشغيل الذاتية: لا توجد إلا بين إعادة تشغيل أمر بها الحارس والبدء الذي يليها (والعدّاد حتى دورة صحيحة) |
+| `/etc/awacs.key` | `root` 0600 | مفتاح الجهاز (64 خانة ست عشرية) الذي يفتح كلمة سر تُكتب على موقع؛ يُصنع في أول بدء يجد `openssl`، ولا يحذفه الحارس ولا `--purge` |
+| `/etc/awacs.networks` | `root` 0600 | الشبكات المنضمة من موقع، `<hexssid>\t<psk>` في كل سطر؛ لا يُكتب إلا بعد أن تثبت كلمة السر، ويُعاد عند كل بدء، ولا يحذفه الحارس ولا `--purge` |
+| `/run/awacs/` | `root` 0700 | القفل ورقم العملية، وذاكرة المسح المؤقتة، وعدّاد المسوح الفارغة، والمخزون المؤقت، وعلامة الشبكة المؤقتة، وجسم القياس، وعلامة `apt` مرة كل إقلاع، وعدّاد البدايات، وعلامات قنوات التقارير، وعدّاد الأسطر المسقطة، وملفات أوامر الموقع (`cmd` و`cmd.ready` و`cmd.last` و`cmd.answer` و`join_id`) |
 | `/etc/systemd/system/awacs.service` و`awacs.service.d/10-device-id.conf` | `root` 0644 | المشغّل (systemd) |
 | الكتلة المعلَّمة في `/etc/rc.local` | `root` 0755 | المشغّل (rc.local) |
 

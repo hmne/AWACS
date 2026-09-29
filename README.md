@@ -8,13 +8,13 @@ AWACS (Advanced WiFi Auto Connection System) is one bash script, `awacs.sh`, tha
 
 Both stacks join a stored network and keep the association alive. Neither checks whether the internet is reachable through it, neither compares networks by throughput, and neither distinguishes a fault on the device from a fault upstream. The situations below leave a headless device offline.
 
-A wrong password on the only network. The stack retries the same network; a watchdog that reboots on lost connectivity reboots in a loop. AWACS reads the refusal, logs `association refused - wrong password? (recovery continues, reboot stays off)`, continues with the other networks and the recovery rungs, and does not reboot for a credential fault.
+A wrong password on the only network. The stack retries the same network; a watchdog that reboots on lost connectivity reboots in a loop. AWACS reads the refusal, logs `association refused by <name> - wrong password? (recovery continues, reboot stays off)`, continues with the other networks and the recovery rungs, and does not reboot for a credential fault.
 
 The home access point goes down, then comes back. The stack stays on whatever it landed on. AWACS falls back to a working stored network (the fastest by measured upload when a probe target exists), then looks every `PREF_CHECK` seconds for a visible stored network of higher priority and returns to it after seeing it twice in a row.
 
 Every stored network is gone. The stack sits disconnected. AWACS joins an emergency network from `SAFETY_NET` (a phone hotspot with its password), and failing that an open network, through a temporary entry that is never written to disk. When a stored network is back, the temporary entry is removed.
 
-The ISP is down while the router is up. The link is fine, so the stack sees nothing wrong; a connectivity watchdog reboots for nothing. AWACS pings the gateway, logs `outage looks external (round N) — waiting, not rebooting`, and waits.
+The ISP is down while the router is up. The link is fine, so the stack sees nothing wrong; a connectivity watchdog reboots for nothing. AWACS pings the gateway, logs `outage looks external: the router answers, the fault is upstream (round N) — waiting, not rebooting`, and waits.
 
 The fault is on the device. The driver or the supplicant is stuck while a stored network is visible. The stack retries forever. AWACS bounces the radio, restarts the network service, reloads the WiFi firmware, and reboots only when a stored network has stayed visible and unreachable for `REBOOT_AFTER_MIN` minutes (30 by default).
 
@@ -23,7 +23,7 @@ The link is slow while a faster stored network is available. The stack chooses b
 ## How it works
 
 1. Every `TICK` seconds (10) the daemon checks the internet: a ping to 8.8.8.8, then to 1.1.1.1, then an HTTP 204 from connectivitycheck.gstatic.com, then, when a site is configured, an HTTP 400 from the site endpoint. One rung passing means online. A check that fails while the device is still sending is repeated once in a patient form (three pings per target, 8-second HTTP limits) before it counts as a failure, once per outage.
-2. After `NET_FAIL_TICKS` failed checks (3) it logs `internet lost on wlan0 - engaging` and starts recovery: 40 to 63 seconds after the loss on a link whose gateway has gone silent, about 72 to 83 seconds when the router keeps answering and one patient check is spent first. A device that boots without internet starts recovery at once.
+2. After `NET_FAIL_TICKS` failed checks (3) it logs `internet lost on HomeNet - router still answers, engaging` (the tail reads `router silent too` or `router none (not associated)` when the router does not answer) and starts recovery: 40 to 63 seconds after the loss on a link whose gateway has gone silent, about 72 to 83 seconds when the router keeps answering and one patient check is spent first. A device that boots without internet starts recovery at once.
 3. Recovery opens gently: every stored network is re-enabled, the network stack is asked to reconnect (`wpa_cli reassociate`, or `nmcli device connect` on a device NetworkManager reports disconnected or failed), and an IPv4 lease plus a passed internet check ends recovery. While the gateway still answers, the first recovery of an outage keeps the live association and skips that reconnect; the second one performs it.
 4. Otherwise three rounds follow. Each round tries every visible stored network, measured by upload when a probe target exists and in signal order otherwise.
 5. Before any teardown the outage is classified. Gateway silent, no lease this round, and a stored network visible (or a radio that hears nothing, or an empty stored list): the fault is on the device. Gateway answering: the outage is external and the daemon waits.
@@ -32,12 +32,13 @@ The link is slow while a faster stored network is available. The stack chooses b
 8. A reboot happens only when the device-side evidence has persisted for `REBOOT_AFTER_MIN` minutes. A wrong-password sign resets that timer, and on NetworkManager images the timer runs only after NetworkManager has itself given up.
 9. The daemon never calls `save_config` or `disable_network`, never runs `nmcli connection modify`, `delete` or `down` on a stored profile, and never runs `nmcli device wifi connect`. Temporary entries live in the running supplicant or under `/run` and are removed by the next daemon start.
 10. With a site configured and `LOG_TARGET` set to `both` or `remote`, every event goes to the site; `both` keeps the full local log, `remote` keeps only `WARN` and `ERROR` lines in it. Lines that cannot be sent during an outage are spooled and delivered in order after recovery; the first spooled line is kept so the outage's start time survives.
+11. A site with a WiFi menu can ask for three things: a scan now, a trial of a stored network, and a trial of a new network with a password typed on the site. The site's relay on the device hands the command over with a signal that ends the daemon's sleep; the daemon reads it at the top of its loop only, tries the network for 15 seconds, keeps it only when it beats the network it left by `SWITCH_GAIN_PCT`, and answers the site as data. A password that works is kept in `/etc/awacs.networks`; it passes through the site encrypted under a device key registered once per boot. No password, key or ciphertext ever reaches a log. The channel is in [docs/en/integration.md](docs/en/integration.md).
 
 On a NetworkManager image the daemon supervises NetworkManager. While NetworkManager reports the device in a transition (connecting or deactivating) it waits and logs `NM is still trying - waiting it out`. A device NetworkManager reports as connected while the internet is down gets no rung either; the log says `NetworkManager is connected, internet is not (round N) — router-side, no rung` and the round goes on to the emergency networks. A recovery rung runs only when NetworkManager reports the device disconnected, failed or unavailable, or when `nmcli` cannot read the state, and the reboot timer arms only after two disconnected or failed readings in a row. If `nmcli` is missing or the interface is unmanaged, the daemon monitors only and says so in the log.
 
 ## Requirements
 
-Debian-family Linux: Raspberry Pi OS with dhcpcd and wpa_supplicant, Raspberry Pi OS Bookworm and other NetworkManager images, Debian derivatives with `apt`. bash 4 or later. The tools `iw`, `ip`, `ping`, `curl`, `awk`, `sed`, `grep`, `pgrep`, `rfkill`, `flock`, `timeout`, `stat`, `date`, `modprobe`, and `wpa_cli` or `nmcli`; all are stock on Raspberry Pi OS and Debian. `iwlist` and `wget` are optional fallbacks. The daemon runs as root. Nothing is installed on the device beyond these tools: a missing tool is reported in the log and installed once per boot in the background with `apt-get`; without `apt-get` the log names the missing tools.
+Debian-family Linux: Raspberry Pi OS with dhcpcd and wpa_supplicant, Raspberry Pi OS Bookworm and other NetworkManager images, Debian derivatives with `apt`. bash 4 or later. The tools `iw`, `ip`, `ping`, `curl`, `awk`, `sed`, `grep`, `pgrep`, `rfkill`, `flock`, `timeout`, `stat`, `date`, `modprobe`, and `wpa_cli` or `nmcli`; all are stock on Raspberry Pi OS and Debian. `iwlist` and `wget` are optional fallbacks. `openssl` is needed only for passwords typed on a site (it makes the device key and opens the password); without it the daemon runs and `join` is off. The daemon runs as root. Nothing is installed on the device beyond these tools: a missing tool is reported in the log and installed once per boot in the background with `apt-get`; without `apt-get` the log names the missing tools.
 
 ## Install
 
@@ -53,7 +54,7 @@ Unattended:
 curl -fsSL https://raw.githubusercontent.com/hmne/AWACS/main/install.sh | sudo bash -s -- --yes --device-id mydevice --log local
 ```
 
-From a clone, `sudo ./install.sh` installs the local `awacs.sh` instead of downloading it. Manual install:
+From a clone, `sudo ./install.sh` installs the local `awacs.sh` instead of downloading it, and verifies it only when `SHA256SUMS` sits beside it. Manual install:
 
 ```sh
 sudo install -m 755 awacs.sh /usr/local/bin/awacs.sh
@@ -78,7 +79,7 @@ export DEVICE_ID="mydevice"
 ( while :; do /usr/local/bin/awacs.sh; sleep 10; done ) >/dev/null 2>&1 &
 ```
 
-Verify with `sudo awacs.sh status`: the daemon line shows a pid, the internet line shows ONLINE. The first line in `/var/log/awacs.log` carries `AWACS 1.0 starting on wlan0 (device mydevice)`, followed by a `reporting:` line with the applied reporting knobs. With `LOG_TARGET` set to `both` or `remote`, the site's `log/log.txt` receives a start line and `tmp/wifi.tmp` appears within a minute. Upgrade, uninstall and every wizard option are in [docs/en/install.md](docs/en/install.md).
+Verify with `sudo awacs.sh status`: the daemon line shows a pid, the internet line shows ONLINE. The first line in `/var/log/awacs.log` carries `AWACS 1.0 starting on wlan0 (device mydevice) - wpa backend, first start of this boot, up 1 min`, followed by a `reporting:` line with the applied reporting knobs. With `LOG_TARGET` set to `both` or `remote`, the site's `log/log.txt` receives a start line and `tmp/wifi.tmp` appears within a minute. Upgrade, uninstall and every wizard option are in [docs/en/install.md](docs/en/install.md).
 
 ## Configuration
 
@@ -126,7 +127,7 @@ Non-ASCII network names are decoded for display and matched byte-exactly inside.
 | [configuration.md](docs/en/configuration.md) | every knob with default, unit, effect and range; the file's rules; deployment shapes |
 | [scenarios.md](docs/en/scenarios.md) | what the stock stack does versus what AWACS does, with sample log lines |
 | [install.md](docs/en/install.md) | wizard, manual install, systemd versus rc.local, upgrade, uninstall |
-| [integration.md](docs/en/integration.md) | the endpoint contract, the shipped receivers, the WiFi cell |
+| [integration.md](docs/en/integration.md) | the endpoint contract, the shipped receivers, the WiFi cell and scan list, the site commands and the device key |
 | [troubleshooting.md](docs/en/troubleshooting.md) | log lines and what each means |
 | [faq.md](docs/en/faq.md) | short answers |
 
@@ -143,9 +144,10 @@ Non-ASCII network names are decoded for display and matched byte-exactly inside.
 - The reboot cannot be switched off, only delayed: `REBOOT_AFTER_MIN` rejects 0.
 - The once-per-boot background `apt-get` install of missing tools has no off switch.
 - Open networks are joined as a last resort by default (`OPEN_NETWORKS="yes"`).
-- Site log lines carry an Arabic message where the program has one; the local log is English.
+- Story lines exist in English and Arabic only. `LOG_LANG` picks the language of the local file and `SITE_LANG` that of the site copy, each `en` by default; DEBUG lines and the `reporting:` line stay English.
 - wpa backend only: open networks with non-ASCII names are skipped, and stored names containing a backslash, a double quote, a tab, a newline, an escape byte or an edge space never match visibility.
 - nm backend: a hidden stored profile must already carry `802-11-wireless.hidden=yes`, and NetworkManager device state 20 (unavailable) never starts the reboot timer.
+- Site commands (scan, switch, join) need a relay on the device. The maintainer's camera dashboard provides one; it is not part of this repository. The shipped receivers store the answers and the device key but carry no command. The relay's long poll is a plain GET on a site without a login, so whoever fetches it first consumes a pending command.
 - Not tested: captive portals, a real ISP outage, IPv6.
 
 ## License

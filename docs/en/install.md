@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/hmne/AWACS/main/install.sh | sudo b
 
 Or from a clone: `sudo ./install.sh`. The wizard uses `whiptail` menus when present and plain prompts otherwise, and needs a terminal unless `--yes` is given. The one-liner downloads `awacs.sh` and `SHA256SUMS` from the release URL and stops when the checksum does not match; a clone is installed from the local copy, verified against `SHA256SUMS` when that file sits beside it. The steps:
 
-1. Language: English or Arabic for the wizard's own text. The local log is English in either case.
+1. Language: English or Arabic for the wizard's own text; `--log-lang` and `--site-lang` set the log languages separately.
 2. Missing tools: the backend's tool list is checked and missing packages are installed with `apt-get` after you agree. If you decline, the daemon makes one attempt by itself once it is online.
 3. Device id: letters, digits, `_` and `-`, up to 32 characters. The default is the id of an earlier install, otherwise the short hostname.
 4. Log target: `local` (the file only), `both` (file and site) or `remote` (site; the file keeps `WARN`, `ERROR` and the local-only lines); `both` and `remote` ask for the site URL and check that `${SITE_URL}/${DEVICE_ID}/${SITE_API}` answers HTTP 400, offering another URL, the URL as typed or local logging when it does not. Without a site the wizard then asks for an optional probe URL, with a site for the time zone of the site's log stamps.
@@ -115,7 +115,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now awacs
 ```
 
-`Restart=always` with `RestartSec=10` is the `rc.local` loop written as a unit. The daemon exits 0 on purpose in two cases and expects to be started again: when it loses the single-instance lock, and when a NetworkManager image that lacked `nmcli` has just had it installed. `StartLimitIntervalSec=0` keeps systemd from giving up after a burst of such exits. The unit starts after `network-pre.target`, not behind `network-online.target`: the daemon's job is to make the network work. `TimeoutStopSec=40` leaves room for the `nmcli -w 5` inside the shutdown handler. `journalctl -u awacs` shows the start and stop events; the daemon itself logs to its file. Details in [systemd/README.md](../../systemd/README.md).
+`Restart=always` with `RestartSec=10` is the `rc.local` loop written as a unit. The daemon exits 0 on purpose in two cases and expects to be started again: when it loses the single-instance lock, and when a NetworkManager image that lacked `nmcli` has just had it installed. `StartLimitIntervalSec=0` keeps systemd from giving up after a burst of such exits. The unit starts after `network-pre.target`, not behind `network-online.target`: the daemon's job is to make the network work. `TimeoutStopSec=40` leaves room for the `nmcli -w 5` inside the shutdown handler and for the stop's spool drain, bounded to 6 lines or 20 s. `journalctl -u awacs` shows the start and stop events; the daemon itself logs to its file. Details in [systemd/README.md](../../systemd/README.md).
 
 ### rc.local
 
@@ -142,17 +142,19 @@ sudo tail -f /var/log/awacs.log
 The first lines of a healthy start with a local-only conf:
 
 ```text
-[INFO][20/09 10:15:04] AWACS 1.0 starting on wlan0 (device mydevice)
-[INFO][20/09 10:15:04] reporting: local | probe: none - signal mode | wifi cell: auto
+2026-09-20T10:15:04+03:00 [INFO] AWACS 1.0 starting on wlan0 (device mydevice) - wpa backend, first start of this boot, up 52 s
+2026-09-20T10:15:04+03:00 [INFO] reporting: local | probe: none - signal mode | wifi cell: auto
+2026-09-20T10:15:05+03:00 [INFO] running with: signal mode (no probe target - networks chosen by signal), reboot after 30 min wedged, wifi cell off (no SITE_URL), 2 stored networks, 0 emergency, open networks yes, stamps in the device zone
+2026-09-20T10:15:08+03:00 [OK] online at start via HomeNet
 ```
 
-With a site, the second line names the site and the probe target instead of `none - signal mode`. A NetworkManager image adds `NetworkManager backend - AWACS supervises it (full capability)`. The line `NetworkManager image but AWACS cannot drive it (unmanaged/no nmcli) - monitoring only` means the interface is unmanaged or `nmcli` is missing; the daemon only watches until that is fixed. `interface ${IF} not present - is the WiFi hardware alive?` means the detected interface does not exist; set `AWACS_IF` in the launcher's environment.
+With a site, the second line names the site and the probe target instead of `none - signal mode`. A NetworkManager image adds `NetworkManager backend - AWACS supervises it (full capability)`. A line beginning `NetworkManager image but AWACS cannot drive it:` names the reason and the cure (`nmcli is missing - will install it once online and restart`, or `wlan0 is unmanaged by NetworkManager - fix unmanaged-devices in NetworkManager.conf and restart AWACS`) and ends `- monitoring only`; the daemon only watches until that is fixed. `interface ${IF} not present - is the WiFi hardware alive?` means the detected interface does not exist; set `AWACS_IF` in the launcher's environment.
 
 `status` prints one row per fact: device (id and interface), backend, daemon (running with its pid, or not running), network, signal, ip, gateway (reachable or not), internet (ONLINE or OFFLINE), viewer (whether a live stream is running) and upload (the kernel counter rate over three seconds). Row labels are English; several values carry an Arabic gloss after a slash, and a note line in Arabic precedes the rows.
 
-With a site configured and `LOG_TARGET` set to `both` or `remote`, the start line reaches `<device-id>/log/log.txt` beside the receiver, and `<device-id>/tmp/wifi.tmp` is written on the first healthy tick and refreshed about every 60 seconds. When the box starts offline the lines wait in the spool and arrive after the first 30 seconds of verified internet.
+With a site configured and `LOG_TARGET` set to `both` or `remote`, the start line reaches `<device-id>/log/log.txt` beside the receiver, and `<device-id>/tmp/wifi.tmp` is written on the first healthy tick and refreshed about every 60 seconds. When the box starts offline the lines wait in the spool and arrive after the first 30 seconds of verified internet, followed by `delivered N held lines stamped HH:MM to HH:MM - they stand above this line with their own times`.
 
-A start line that repeats every ten seconds means the daemon exits right after starting and the launcher respawns it; the lines between two start lines give the reason. A second launcher does not produce start lines: the losing copy exits silently and is respawned for nothing. Check that only one method is installed with `systemctl is-enabled awacs` and `grep awacs.sh /etc/rc.local`.
+A start line that repeats every ten seconds means the daemon exits right after starting and the launcher respawns it; the lines between two start lines give the reason, the start line itself counts the restarts (`restart N of this boot`), and an exit the daemon did not order is announced as `AWACS exited unexpectedly (status N, last command ...: ...) - the launcher restarts it in 10 s`. A second launcher does not produce start lines: the losing copy says `another AWACS already holds the lock (pid N) - two launchers are running it, keep one (the rc.local line or the systemd unit)` once per boot, exits and is respawned for nothing. Check that only one method is installed with `systemctl is-enabled awacs` and `grep awacs.sh /etc/rc.local`.
 
 The no-write rule can be checked by hand: `sudo md5sum /etc/wpa_supplicant/wpa_supplicant.conf` (or `ls -l /etc/NetworkManager/system-connections`) before install, after a reboot and after a day. Nothing changes.
 
@@ -179,7 +181,7 @@ Re-running the wizard (`sudo ./install.sh` or the one-liner) replaces `awacs.sh`
 
 ```sh
 sudo ./install.sh --uninstall            # remove the unit or the rc.local block and awacs.sh; keep settings and log
-sudo ./install.sh --uninstall --purge    # also remove /etc/awacs.conf, /var/log/awacs.log and /run/awacs
+sudo ./install.sh --uninstall --purge    # also remove /etc/awacs.conf, /var/log/awacs.log and /run/awacs; /etc/awacs.key, /etc/awacs.networks and the reboot memory beside the log (.reboot, .spool, .reboots) stay
 ```
 
 An `rc.local` loop started in the current boot may still be alive after `--uninstall`; it ends at the next reboot. By hand:
@@ -190,6 +192,7 @@ sudo systemctl disable --now awacs && sudo rm -rf /etc/systemd/system/awacs.serv
 sudo rm -f /usr/local/bin/awacs.sh
 sudo rm -f /etc/awacs.conf             # holds hotspot passwords
 sudo rm -f /var/log/awacs.log
+sudo rm -f /etc/awacs.key /etc/awacs.networks   # the device key and the networks joined from a site; --purge leaves them
 ```
 
 Nothing else to clean:
@@ -206,6 +209,9 @@ Nothing else to clean:
 | `/usr/local/bin/awacs.sh` | root 0755 | the daemon and toolbox |
 | `/etc/awacs.conf` | root 0600 | your settings, including hotspot passwords |
 | `/var/log/awacs.log` | root 0600 | the local log, rotated at `LOG_CAP` lines |
-| `/run/awacs/` | root 0700 | lock and pid, scan cache, empty-scan counter, spool, temporary-network marker, probe body, once-per-boot apt marker |
+| `/var/log/awacs.log.reboot`, `.spool`, `.reboots` | root 0600 | the self-reboot memory: present only between a reboot the daemon ordered and the start that follows (the count until a healthy tick) |
+| `/etc/awacs.key` | root 0600 | the device key (64 hex) that opens a password typed on a site; made at the first start that finds `openssl`, never removed by the daemon or by `--purge` |
+| `/etc/awacs.networks` | root 0600 | the networks joined from a site, `<hexssid>\t<psk>` per line; written only after a password proved itself, re-added at every start, never removed by the daemon or by `--purge` |
+| `/run/awacs/` | root 0700 | lock and pid, scan cache, empty-scan counter, spool, temporary-network marker, probe body, once-per-boot apt marker, start counter, reporting-channel markers, dropped-line counter, the site-command files (`cmd`, `cmd.ready`, `cmd.last`, `cmd.answer`, `join_id`) |
 | `/etc/systemd/system/awacs.service` and `awacs.service.d/10-device-id.conf` | root 0644 | the launcher (systemd) |
 | the marked block in `/etc/rc.local` | root 0755 | the launcher (rc.local) |

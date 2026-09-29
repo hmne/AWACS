@@ -5,7 +5,7 @@
 AWACS never edits the stored network configuration of the system. A change is rejected if it adds any of:
 
 - `wpa_cli save_config`, `disable_network`, or `remove_network` on anything but the daemon's own temporary id, or a write to `/etc/wpa_supplicant/wpa_supplicant.conf`;
-- `nmcli connection modify`, `nmcli device wifi connect`, or `connection delete`/`down` on anything not named `awacs-crutch-*` or `awacs-safety-*` and located under `/run/NetworkManager/system-connections/`, or a write under `/etc/NetworkManager/`;
+- `nmcli connection modify`, `nmcli device wifi connect`, or `connection delete`/`down` on anything not named `awacs-crutch-*`, `awacs-safety-*`, `awacs-join-*` or `awacs-joined-*` and located under `/run/NetworkManager/system-connections/`, or a write under `/etc/NetworkManager/`;
 - `ip link set ... down/up` or a `dhcpcd` restart on the NetworkManager backend.
 
 Every exit path of a recovery (win, loss, shutdown) must keep `enable_all`. A dead daemon may never leave the device worse off than a device without it.
@@ -41,3 +41,4 @@ Every statement in `README.md` and `docs/` must be true of the code. If you chan
 - One change per pull request.
 - Describe how you verified the change: backend, commands run, relevant log lines.
 - Keep the changelog entry factual.
+- A change to `awacs.sh` regenerates `SHA256SUMS` (`sha256sum awacs.sh > SHA256SUMS`) in the same commit; the one-line installer stops when the file does not name the script.
