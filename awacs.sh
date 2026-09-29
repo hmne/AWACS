@@ -1722,7 +1722,7 @@ be_activate() {  # raw activation of ID $1 (association + DHCP proof); ACT_WHY_*
   fi
   if [[ $BACKEND != wpa ]]; then
     nm_wait_settled   # never issue con up mid-transition (100 counts as settled)
-    NM_ERR=$(nmcli -w "$ASSOC_WAIT" connection up uuid "$1" 2>&1 >/dev/null); NM_RC=$?
+    NM_ERR=$(nmcli -w "$ASSOC_BUDGET" connection up uuid "$1" 2>&1 >/dev/null); NM_RC=$?
     if (( NM_RC == 8 )); then (( NM_RC8 )) || say_nm_rc8; NM_RC8=1; else NM_RC8=0; fi
     if (( NM_RC == 3 || NM_RC == 4 )) && nm_auth_sig "$NM_ERR"; then
       NM_AUTH=1   # sticky for the whole fight: a later timeout on another candidate
@@ -1738,7 +1738,7 @@ be_activate() {  # raw activation of ID $1 (association + DHCP proof); ACT_WHY_*
       if (( NM_RC == 8 )); then ACT_WHY_EN="NetworkManager not answering"; ACT_WHY_AR="مدير الشبكة ما يرد"
       elif (( NM_RC == 10 )) || [[ $NM_ERR == *"not found"* || $NM_ERR == *"not be found"* || $NM_ERR == *"No suitable"* ]]; then
         ACT_WHY_EN="not found on the air"; ACT_WHY_AR="غير موجودة على الهواء"
-      elif (( NM_RC == 3 )); then ACT_WHY_EN="timed out after ${ASSOC_WAIT} s"; ACT_WHY_AR="انتهت المهلة بعد ${ASSOC_WAIT} ث"
+      elif (( NM_RC == 3 )); then ACT_WHY_EN="timed out after ${ASSOC_BUDGET} s"; ACT_WHY_AR="انتهت المهلة بعد ${ASSOC_BUDGET} ث"
       else m=$(nm_err_text); ACT_WHY_EN="NetworkManager: ${m:-nmcli exit ${NM_RC}}"; ACT_WHY_AR="مدير الشبكة: ${m:-nmcli exit ${NM_RC}}"; fi
       return 1
     fi
@@ -1834,19 +1834,29 @@ detect_backend() {  # decided once per daemon start; the rc.local respawn re-dec
 
 WAIT_WHY=""   # which of wait_ip's two tests failed last: assoc (never associated) | addr (no lease)
 WAIT_TD=0     # wpa: the target's row read TEMP-DISABLED at least once while wait_ip watched
+ASSOC_BUDGET=$ASSOC_WAIT   # seconds the activation in progress may take: ASSOC_WAIT, or a manual
+                           # trial's TRIAL_ASSOC_WAIT while connect_id runs its one connect
 wait_ip() {  # association alone is not a connection — demand an IPv4 lease too
-  # $1 (wpa, optional) = the network id being activated: its row is sampled once a second.
-  local i
+  # $1 (wpa, optional) = the network id being activated: its row is sampled once a second for
+  # the whole budget, so a wrong key is told from a network out of reach whenever the mark shows.
+  local i td_first=-1
   WAIT_WHY=""; WAIT_TD=0
-  for (( i = 0; i < ASSOC_WAIT; i++ )); do
+  for (( i = 0; i < ASSOC_BUDGET; i++ )); do
     [[ -n $(ip -4 addr show dev "$IF" scope global 2>/dev/null) ]] \
       && iw dev "$IF" link 2>/dev/null | grep -q '^Connected' && return 0
     # A wrong key associates, fails the 4-way handshake and ends without an address, and the
     # supplicant's TEMP-DISABLED mark flickers with every retry: one read at the end can miss
-    # it, so the row is sampled every second and a single sighting is kept.
-    if [[ -n ${1:-} && $BACKEND == wpa ]] && (( ! WAIT_TD )) \
-       && wpa list_networks | awk -F'\t' -v id="$1" '$1 == id && /TEMP-DISABLED/ { f = 1 } END { exit !f }'; then
-      WAIT_TD=1
+    # it, so the row is sampled every second and a single sighting is kept for the verdict. The
+    # supplicant parks a failed network for about 10 s and tries again; a mark seen again 10 s or
+    # more after the first sighting means that retry failed too, a wrong key rather than a weak
+    # link, and the wait ends there instead of at the budget's end (about 15 s sooner on a 45 s
+    # trial). A right key on a weak link that makes it on the retry is still taken above.
+    if [[ -n ${1:-} && $BACKEND == wpa ]]; then
+      if wpa list_networks | awk -F'\t' -v id="$1" '$1 == id && /TEMP-DISABLED/ { f = 1 } END { exit !f }'; then
+        WAIT_TD=1
+        (( td_first < 0 )) && td_first=$i
+        (( i - td_first >= 10 )) && break
+      fi
     fi
     sleep 1
   done
@@ -1857,10 +1867,17 @@ wait_ip() {  # association alone is not a connection — demand an IPv4 lease to
 CONNECT_WHY="" CONNECT_WHY_AR=""   # why the last connect_id failed, in both languages, for the
                                    # site's story; empty after a success. A reason is never a key.
 connect_id() {  # activate network ID $1 (wpa numeric id / nm profile UUID) — SHARED body,
-  # same crediting doctrine on both backends.
+  # same crediting doctrine on both backends. $2 (optional) = a longer association budget in
+  # seconds for this one connect (a manual trial's TRIAL_ASSOC_WAIT); never below ASSOC_WAIT,
+  # and ASSOC_WAIT again the moment the activation ends, so the recovery's own waits keep it.
+  local rc
   dbg "connect_id: activating $1 (backend $BACKEND)"
   CONNECT_WHY=""; CONNECT_WHY_AR=""
-  be_activate "$1" || { CONNECT_WHY=$ACT_WHY_EN; CONNECT_WHY_AR=$ACT_WHY_AR; return 1; }
+  ASSOC_BUDGET=${2:-$ASSOC_WAIT}
+  (( ASSOC_BUDGET < ASSOC_WAIT )) && ASSOC_BUDGET=$ASSOC_WAIT
+  be_activate "$1"; rc=$?
+  ASSOC_BUDGET=$ASSOC_WAIT
+  (( rc == 0 )) || { CONNECT_WHY=$ACT_WHY_EN; CONNECT_WHY_AR=$ACT_WHY_AR; return 1; }
   LINK_OK=1   # association + DHCP succeeded this round — the LINK layer is provably fine
   LINK_OK_NAME=$(name_of_id "$1")   # the network that linked, for the external verdict
   have_net || { CONNECT_WHY="linked but no internet"; CONNECT_WHY_AR="مرتبط بس بدون إنترنت"; return 1; }
@@ -1963,7 +1980,7 @@ drop_open() {  # $1 = why: home (a stored network carries the device again, OK l
 
 try_safety() {  # aasw's SAFETY_NET made real: owner-listed emergency networks WITH
   # passwords, tried BEFORE open strangers. Attempted even when not visible in scan
-  # (hotspots are often just-enabled or hidden; wait_ip bounds each try at 25s).
+  # (hotspots are often just-enabled or hidden; wait_ip bounds each try at ASSOC_WAIT s).
   # Every entry's fate is said once per outage: skipped (a settings fault the owner must fix),
   # uncreatable, refused with the reason, then the closing count. Names only, never a password.
   (( ${#SAFETY_NET[@]} )) || return 1
@@ -2800,15 +2817,24 @@ late_loss() {  # $1 = the network lost: the loss ends an open episode, its uncou
 # key, ciphertext or blob ever reaches a log or a site line (SSIDs may).
 readonly CMD_TTL=60           # a command older than this by uptime waited behind a recovery: answered expired
 readonly TRIAL_WAIT=15        # the owner's number: a manual trial holds the network this long, then measures
-readonly TRIAL_HEAD=5         # the trying answer stands alone this long before the probe starts, so the site's polls see it
+readonly TRIAL_HEAD=5         # the trying answer stands alone this long before the measuring answer, so the site's polls see it
+readonly TRIAL_POST_GAP=2     # the probe waits this long at most for the trying answer's child to leave the uplink
+readonly TRIAL_ASSOC_WAIT=45  # a manual trial's association budget: a new or far network scans 7 to 23 s before it
+                              # authenticates (lab, hwsim), and the 25 s of ASSOC_WAIT answered such networks out_of_reach
 readonly ORIGIN_KBPS_AGE=120  # the origin's last measurement counts as fresh this long, else one probe
+readonly HOLD_MAX=86400       # the longest hold a switch may ask for: one day (the site asks 1800)
 CMD_EPOCH=0                   # the site's epoch of the command being answered (its id on the site)
 KEY_SENT=0                    # the key reached the site this boot (2xx): later sends are skipped
 CMD_STUCK=0                   # the consumer could not remove the command file: the served-now guard stands down
 KEY_REFUSED_SAID=0            # the site holds another key: said once per boot
 ORIGIN_ID="" ORIGIN_NAME="" ORIGIN_KBPS=0   # where a trial leaves from, for the way back
 TRIAL_AT=0                    # unix time of the last manual trial: the loop counts it as a dance
-TRIAL_HOLD_PID="" TRIAL_PROBE_PID=""   # the trial's window sleep and its probe child while they run: on_shutdown ends them
+HOLD_UNTIL=0 HOLD_NAME=""     # the owner's hold from the menu: the uptime it ends (0 = none) and the
+                              # network's name. Memory only: a restart forgets it.
+HOLD_EVAL_SAID=0              # the evaluation vetoed by a hold is said once per hold
+TRIAL_HOLD_PID="" TRIAL_HEAD_PID="" TRIAL_PROBE_PID=""   # the trial's window sleep, head sleep and probe child while they run: on_shutdown ends them
+TRIAL_POST_PID=""   # the child carrying a trial's mid-way answer to the site; the trial waits for it only where it is idle anyway
+TRIAL_TIMER_PID=""  # wait_first's timer child while it runs: on_shutdown ends it too
 
 cmd_ready_drop() {  # the lock winner's exit: capture.sh must not signal a PID that no longer traps
   (( LOCK_WON )) && rm -f "$CMD_READY" 2>/dev/null
@@ -2818,13 +2844,18 @@ cmd_ready_drop() {  # the lock winner's exit: capture.sh must not signal a PID t
 cmd_answer() {  # STATE [FIELD...]: the latest answer, kept in CMD_ANSWER and sent now in the
   # foreground; cmd_answer_send re-sends it on every healthy tick until the site takes it. A
   # fire-and-forget POST from a trial network without internet would lose the very answer
-  # the owner waits for.
+  # the owner waits for. A trial's mid-way answers go through trial_post instead.
+  cmd_answer_put "$@"
+  cmd_answer_send
+}
+cmd_answer_put() {  # STATE [FIELD...] -> CMD_ANSWER: the line every sender reads. Written by the
+  # main shell only, and never while a trial's answer child still runs, so no two senders ever
+  # race over the one file.
   local line=$1 f
   line="$(date +%s)"$'\t'"${CMD_EPOCH}"$'\t'"${line}"
   shift
   for f in "$@"; do line+=$'\t'"${f//[[:cntrl:]]/ }"; done   # a field never carries the separators
   printf '%s\n' "$line" >"$CMD_ANSWER" 2>/dev/null || :
-  cmd_answer_send
 }
 cmd_answer_send() {  # CMD_ANSWER -> tmp/wifi_state.tmp through the device write channel; gone on 2xx
   [[ -s $CMD_ANSWER ]] || return 0
@@ -2834,6 +2865,42 @@ cmd_answer_send() {  # CMD_ANSWER -> tmp/wifi_state.tmp through the device write
   code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 4 --data-urlencode "file=tmp/wifi_state.tmp" \
     --data-urlencode "data=${line}" "$(api_url)" 2>/dev/null) || code=000
   [[ $code =~ ^2[0-9][0-9]$ ]] && rm -f "$CMD_ANSWER" 2>/dev/null
+  return 0
+}
+
+# The hold. A switch may carry hold=<seconds> in its fifth field: the owner wants to stay on the
+# chosen network that long. The trial runs as always; a verdict that would return to the origin
+# is skipped while the network has internet. For the hold's seconds (uptime clock) the
+# preferred-network look and the evaluation do not run, since both can leave the network. The
+# fight is untouched: a real outage ends the hold (reachability first), so does a new command,
+# and the hold expires by itself. Nothing is written to disk: a restart forgets the hold.
+hold_start() {  # $1 = name, $2 = seconds
+  HOLD_NAME=$1; HOLD_UNTIL=$(( $(uptime_s) + $2 )); HOLD_EVAL_SAID=0
+  site_log INFO "hold on $1 for $(dur_words "$2") - no preferred-network return and no evaluation leaves it; an internet loss or a new command ends it" \
+                "تثبيت على $1 لمدة $(dur_words_ar "$2") - لا رجوع لشبكة مفضلة ولا تقييم يتركها؛ ينتهي بانقطاع الإنترنت أو بأمر جديد"
+}
+hold_on() {  # the hold stands: asked, and its uptime not yet reached
+  (( HOLD_UNTIL > 0 && $(uptime_s) < HOLD_UNTIL ))
+}
+hold_end() {  # $1 = why (en), $2 = why (ar): said once, then forgotten. Silent when no hold stands.
+  (( HOLD_UNTIL > 0 )) || return 0
+  site_log INFO "hold on ${HOLD_NAME} ended - $1" "انتهى التثبيت على ${HOLD_NAME} - $2"
+  HOLD_UNTIL=0; HOLD_NAME=""
+  return 0
+}
+hold_check() {  # the loop top: a hold whose time has passed ends with its line, nothing else happens
+  (( HOLD_UNTIL > 0 )) || return 0
+  (( $(uptime_s) >= HOLD_UNTIL )) && hold_end "back to its own judgement" "رجعنا لحكم أواكس"
+  return 0
+}
+hold_eval_veto() {  # $1 = flow kbps, $2 = floor: under a hold the evaluation does not run (it could
+  # leave the held network); said once per hold with when the hold ends. Returns 0 when vetoed.
+  hold_on || return 1
+  if (( ! HOLD_EVAL_SAID )); then
+    HOLD_EVAL_SAID=1
+    site_log INFO "upload slow on ${HOLD_NAME} ($1 kbps, floor $2) - held from the menu, no evaluation until the hold ends in $(dur_words "$(( HOLD_UNTIL - $(uptime_s) ))")" \
+                  "الرفع بطيء على ${HOLD_NAME} ($1 كيلوبت/ث، الحد $2) - مثبّتة من القائمة، لا تقييم حتى ينتهي التثبيت بعد $(dur_words_ar "$(( HOLD_UNTIL - $(uptime_s) ))")"
+  fi
   return 0
 }
 
@@ -2848,7 +2915,7 @@ cmd_reason() {  # connect_id's CONNECT_WHY -> the answer's reason token (the HUD
 wifi_cmd_check() {  # $1 = engaged (the loop's fight flag): the one consumer, at the loop top. Reads,
   # validates, dedupes and ages the command, answers taken and hands it to its handler. The file
   # goes before anything else runs, so a crash inside a handler cannot replay the command.
-  local line up epoch cmd key blob last="" now
+  local line up epoch cmd key blob last="" now hold=0
   (( WIFI_CMD )) || [[ -s $CMD_FILE ]] || return 0
   WIFI_CMD=0
   [[ -s $CMD_FILE ]] || return 0
@@ -2874,12 +2941,19 @@ wifi_cmd_check() {  # $1 = engaged (the loop's fight flag): the one consumer, at
                   "رُفض أمر الموقع ${cmd} - الإنعاش شغال، اضغط مرة ثانية بعد رجوع الإنترنت"
     cmd_answer failed busy; return 0
   fi
+  hold_end "a new command from the site" "وصل أمر جديد من الموقع"   # any served command ends a standing hold; a held switch starts its own
   case $cmd in
     scan)   cmd_answer taken; wifi_cmd_scan ;;
     switch) [[ $key =~ ^([0-9a-f]{2}){1,32}$ ]] || {
               llog INFO "site switch dropped - no network key" "أُسقط أمر التبديل - بلا مفتاح شبكة"
               cmd_answer failed out_of_reach; return 0; }
-            cmd_answer taken; wifi_cmd_switch "$key" ;;
+            # The fifth field, a join's blob slot, may carry hold=<seconds> on a switch (the site
+            # sends 1800). Anything else there is not a hold and the switch runs without one.
+            if [[ $blob =~ ^hold=([1-9][0-9]{0,5})$ ]] && (( BASH_REMATCH[1] <= HOLD_MAX )); then hold=${BASH_REMATCH[1]}
+            elif [[ -n $blob ]]; then
+              llog INFO "site switch: the fifth field is not a hold - switching without one" "أمر التبديل: الحقل الخامس ليس تثبيتاً - نبدّل بدون تثبيت"
+            fi
+            cmd_answer taken; wifi_cmd_switch "$key" "$hold" ;;
     join)   [[ $key =~ ^([0-9a-f]{2}){1,32}$ && -n $blob ]] || {
               llog INFO "site join dropped - no network key or no password" "أُسقط أمر الانضمام - بلا مفتاح شبكة أو بلا كلمة سر"
               cmd_answer failed key_changed; return 0; }
@@ -2930,8 +3004,9 @@ wifi_id_by_key() {  # $1 = SSID hex -> the stored id for it, a visible one first
   printf '%s' "$first"
 }
 
-wifi_cmd_switch() {  # $1 = SSID hex of a stored network: the challenger's trial, answered switched
-  local id name k=0 reason
+wifi_cmd_switch() {  # $1 = SSID hex of a stored network, $2 = hold seconds (0 = none): the
+  # challenger's trial, answered switched; with a hold the verdict keeps the network either way
+  local id name k=0 reason hold=${2:-0}
   (( net_up )) || {
     site_log INFO "switch asked from the site while offline - recovery decides the network until the internet is back" \
                   "طُلب تبديل من الموقع والإنترنت مقطوع - الإنعاش يقرر الشبكة حتى يرجع الإنترنت"
@@ -2944,22 +3019,29 @@ wifi_cmd_switch() {  # $1 = SSID hex of a stored network: the challenger's trial
   name=$(name_of_id "$id")
   if [[ $id == "$(current_id)" ]]; then
     [[ $LAST_KBPS_ID == "$id" ]] && k=$LAST_KBPS
+    if (( hold > 0 )); then   # the owner's "keep me here": no trial, the hold starts now
+      site_log INFO "switch asked from the site to ${name} - already on it, holding it" \
+                    "طُلب تبديل من الموقع إلى ${name} - نحن عليها أصلاً، نثبّت عليها"
+      hold_start "$name" "$hold"
+      cmd_answer switched "$name" "$k" "hold=${hold}"; return 0
+    fi
     site_log INFO "switch asked from the site to ${name} - already on it" "طُلب تبديل من الموقع إلى ${name} - نحن عليها أصلاً"
     cmd_answer switched "$name" "$k"; return 0
   fi
-  wifi_trial_origin "$name"
-  if ! connect_id "$id"; then
+  wifi_trial_origin "$name" "$hold"
+  if ! connect_id "$id" "$TRIAL_ASSOC_WAIT"; then
     reason=$(cmd_reason "$CONNECT_WHY")
     site_log WARN "manual trial: ${name} ${CONNECT_WHY} - going back to ${ORIGIN_NAME}" \
                   "التجربة اليدوية: ${name} ${CONNECT_WHY_AR} - نرجع على ${ORIGIN_NAME}"
     wifi_trial_back || :
     cmd_answer failed "$reason"; return 1
   fi
-  wifi_trial_run "$id" "$name" switched
+  wifi_trial_run "$id" "$name" switched "$hold"
 }
 
-wifi_trial_origin() {  # $1 = the challenger's name: where the device leaves from, kept for the way
-  # back (id, name, its measurement when fresh, else one probe). The opening line names the bar.
+wifi_trial_origin() {  # $1 = the challenger's name, $2 = hold seconds (0 = none): where the device
+  # leaves from, kept for the way back (id, name, its measurement when fresh, else one probe).
+  # The opening line names the bar, and the hold when one was asked.
   ORIGIN_ID=$(current_id); ORIGIN_NAME=$(name_of_id "$ORIGIN_ID"); ORIGIN_NAME=${ORIGIN_NAME:-$IF}
   if [[ -n $ORIGIN_ID && $LAST_KBPS_ID == "$ORIGIN_ID" ]] && (( $(uptime_s) - LAST_KBPS_AT < ORIGIN_KBPS_AGE )); then
     ORIGIN_KBPS=$LAST_KBPS
@@ -2970,6 +3052,11 @@ wifi_trial_origin() {  # $1 = the challenger's name: where the device leaves fro
   TRIAL_AT=$(date +%s)
   streaming && site_log INFO "manual trial under a live stream - the viewer stutters while the network changes" \
                              "تجربة يدوية أثناء بث مباشر - المشاهد يتقطع عليه أثناء تغيير الشبكة"
+  if (( ${2:-0} > 0 )); then
+    site_log INFO "manual trial: $1 for ${TRIAL_WAIT} s, leaving ${ORIGIN_NAME} (${ORIGIN_KBPS} kbps) - the bar is $(( ORIGIN_KBPS * CUR_GAIN / 100 )) kbps, and it stays for $(dur_words "$2") either way while it has internet" \
+                  "تجربة يدوية: $1 لمدة ${TRIAL_WAIT} ث، نترك ${ORIGIN_NAME} (${ORIGIN_KBPS} كيلوبت/ث) - الحد $(( ORIGIN_KBPS * CUR_GAIN / 100 )) كيلوبت/ث، وتبقى $(dur_words_ar "$2") على أي حال ما دام فيها إنترنت"
+    return 0
+  fi
   site_log INFO "manual trial: $1 for ${TRIAL_WAIT} s, leaving ${ORIGIN_NAME} (${ORIGIN_KBPS} kbps) - it stays only at $(( ORIGIN_KBPS * CUR_GAIN / 100 )) kbps or more" \
                 "تجربة يدوية: $1 لمدة ${TRIAL_WAIT} ث، نترك ${ORIGIN_NAME} (${ORIGIN_KBPS} كيلوبت/ث) - تبقى فقط إذا وصلت $(( ORIGIN_KBPS * CUR_GAIN / 100 )) كيلوبت/ث أو أكثر"
 }
@@ -2980,29 +3067,56 @@ wait_pid() {  # $1 = a background child of this shell: wait until it has really 
   # for the loop top, which is the one consumer of commands.
   while kill -0 "$1" 2>/dev/null; do wait "$1" 2>/dev/null || :; done
 }
+wait_first() {  # $1 = a background child, $2 = seconds: wait until the child has ended or the
+  # seconds have passed, whichever first. A timer child marks the seconds and wait -n blocks
+  # until some child ends (never a poll; a trapped USR1 returns early, so the check repeats);
+  # whatever ended is reaped, and the timer is ended when the child won. The timer's pid sits
+  # in TRIAL_TIMER_PID so a shutdown landing inside the wait ends it with the other children.
+  sleep "$2" 9>&- & TRIAL_TIMER_PID=$!
+  while kill -0 "$1" 2>/dev/null && kill -0 "$TRIAL_TIMER_PID" 2>/dev/null; do wait -n 2>/dev/null || :; done
+  kill "$TRIAL_TIMER_PID" 2>/dev/null || :
+  TRIAL_TIMER_PID=""
+}
+trial_post() {  # $1 = cell | none, then STATE [FIELD...]: a trial's mid-way answer (trying, measuring),
+  # written now and carried to the site by a background child the trial does not wait for at
+  # that moment (each POST is 1 to 2 s on the owner's uplink; off the window's critical path);
+  # with cell the child republishes the WiFi cell after the answer. The trial waits for the
+  # child before it writes the next answer, so the site reads them in order, and the verdict's
+  # answer stays foreground (cmd_answer): a shutdown cannot lose it.
+  local cell=$1; shift
+  cmd_answer_put "$@"
+  { cmd_answer_send; [[ $cell == cell ]] && report_wifi; } >/dev/null 2>&1 9>&- &
+  TRIAL_POST_PID=$!
+}
 
 wifi_trial_run() {  # $1 = id (linked, internet proven), $2 = its name, $3 = the answer when it stays
-  # (switched | joined). The challenger's trial: the owner's TRIAL_WAIT window opens the moment
-  # the link delivers; the trying answer stands alone for TRIAL_HEAD s, then the one upload probe
-  # runs inside the window (the measuring answer), and the verdict comes at the later of the
-  # window and head plus probe (a 200 KB probe takes 2-8 s on the owner's uplinks, so the network
-  # is held the full 15 s and the probe's seconds add nothing to them). Then the never-break bar
-  # (CUR_GAIN of the origin) decides: stay, or return_to the origin. Never the ordinary evaluation
-  # or fight(): they treat the incumbent as home, and this network is a challenger. enable_all
-  # on every exit. Signal mode keeps any network that delivers.
-  local trial_kbps="" bar
+  # (switched | joined), $4 = hold seconds (0 = none; a switch only). The challenger's trial: the
+  # owner's TRIAL_WAIT window opens the moment
+  # the link delivers. The trying answer and the cell leave from a background child; the one
+  # upload probe starts when that child has left the uplink or TRIAL_POST_GAP s have passed,
+  # whichever first, and runs inside the window. A child still running at the cap overlaps the
+  # probe with the cell's POST, under 1 KB against the probe's 200 KB: a number the probe can
+  # carry. The measuring answer follows at TRIAL_HEAD s, once the trying child has ended: the
+  # site polls every 2 s, an answer replaced 92 ms later (round 1, measured) never reached it,
+  # and the answers must arrive in order. The verdict comes at the later of the window and the
+  # probe's end (a 200 KB probe takes 2-8 s on the owner's uplinks, so the network is held the
+  # full 15 s and the probe's seconds add nothing to them); its answer is the one POST the trial
+  # waits for. Then the never-break bar (CUR_GAIN of the origin) decides: stay, or return_to the
+  # origin. Never the ordinary evaluation or fight(): they treat the incumbent as home, and this
+  # network is a challenger. enable_all on every exit. Signal mode keeps any network that delivers.
+  # With a hold the network stays under the bar as well, as long as it has internet (the probe
+  # carried bytes, or the quick check passes now); without internet the way back runs as always.
+  local trial_kbps="" bar hold=${4:-0} stay=0
   enable_all
   sleep "$TRIAL_WAIT" 9>&- & TRIAL_HOLD_PID=$!   # the window; 9>&- so the child never holds the lock
-  cmd_answer trying "$2"
-  report_wifi   # the cell follows the network now, not at the next minute
-  # The trying answer stands alone for TRIAL_HEAD s: the site polls every 2 s, and an answer
-  # replaced 92 ms later (round 1, measured) never reached it. The head also keeps the answer's
-  # and the cell's bytes off the probe's number. The head rides the probe's pid slot.
-  sleep "$TRIAL_HEAD" 9>&- & TRIAL_PROBE_PID=$!
-  wait_pid "$TRIAL_PROBE_PID"; TRIAL_PROBE_PID=""
+  sleep "$TRIAL_HEAD" 9>&- & TRIAL_HEAD_PID=$!   # the head: the measuring answer waits for it
+  trial_post cell trying "$2"   # the answer, then the cell follows the network now, not at the next minute
+  wait_first "$TRIAL_POST_PID" "$TRIAL_POST_GAP"   # the probe never shares the uplink with the trying POST
   rm -f "$TRIAL_PROBE" 2>/dev/null
   { up_kbps >"$TRIAL_PROBE" 2>/dev/null; } 9>&- & TRIAL_PROBE_PID=$!
-  cmd_answer measuring "$2"
+  wait_pid "$TRIAL_HEAD_PID"; TRIAL_HEAD_PID=""
+  wait_pid "$TRIAL_POST_PID"   # trying has left before measuring is written: the site reads them in order
+  trial_post none measuring "$2"
   wait_pid "$TRIAL_PROBE_PID"; TRIAL_PROBE_PID=""
   IFS= read -r trial_kbps <"$TRIAL_PROBE" 2>/dev/null || :   # up_kbps prints no newline: read still assigns
   rm -f "$TRIAL_PROBE" 2>/dev/null
@@ -3016,15 +3130,31 @@ wifi_trial_run() {  # $1 = id (linked, internet proven), $2 = its name, $3 = the
   note_kbps "$trial_kbps"
   probe_failed && say_probe_fail "$2"
   wait_pid "$TRIAL_HOLD_PID"; TRIAL_HOLD_PID=""   # the network is held for the owner's full window whatever the probe took
+  wait_pid "$TRIAL_POST_PID"; TRIAL_POST_PID=""   # measuring has left before the verdict's answer is written
   bar=$(( ORIGIN_KBPS * CUR_GAIN / 100 ))
   if ! probe_on || [[ -z $ORIGIN_ID ]] || (( trial_kbps > 0 && trial_kbps >= bar )); then
+    stay=1
     site_log OK "manual trial: $2 $(up_words "$trial_kbps"), the ${bar} kbps bar met - staying on it" \
                 "التجربة اليدوية: $2 $(up_words_ar "$trial_kbps")، تجاوزت الحد ${bar} كيلوبت/ث - باقون عليها"
-    cmd_answer "$3" "$2" "$trial_kbps"
+  elif (( hold > 0 )) && { (( trial_kbps > 0 )) || have_net; }; then
+    stay=1
+    site_log INFO "manual trial: $2 uploads at ${trial_kbps} kbps, under the ${bar} kbps bar (${ORIGIN_NAME} ${ORIGIN_KBPS} kbps at ${CUR_GAIN}%) - staying anyway, held from the menu" \
+                  "التجربة اليدوية: $2 ترفع ${trial_kbps} كيلوبت/ث، تحت الحد ${bar} كيلوبت/ث (${ORIGIN_NAME} ${ORIGIN_KBPS} كيلوبت/ث عند ${CUR_GAIN}%) - باقون عليها على أي حال، تثبيت من القائمة"
+  elif (( hold > 0 )); then
+    site_log INFO "manual trial: $2 measured 0 kbps and fails the internet check - the hold is not taken, going back to ${ORIGIN_NAME}" \
+                  "التجربة اليدوية: $2 قاست 0 كيلوبت/ث وما نجحت في فحص الإنترنت - ما نثبّت عليها، نرجع على ${ORIGIN_NAME}"
+  fi
+  if (( stay )); then
+    if (( hold > 0 )); then
+      hold_start "$2" "$hold"
+      cmd_answer "$3" "$2" "$trial_kbps" "hold=${hold}"   # foreground: the verdict is the one answer a shutdown must not lose
+    else
+      cmd_answer "$3" "$2" "$trial_kbps"
+    fi
     report_wifi
     return 0
   fi
-  site_log INFO "manual trial: $2 uploads at ${trial_kbps} kbps, under the ${bar} kbps bar (${ORIGIN_NAME} ${ORIGIN_KBPS} kbps at ${CUR_GAIN}%) - going back" \
+  (( hold > 0 )) || site_log INFO "manual trial: $2 uploads at ${trial_kbps} kbps, under the ${bar} kbps bar (${ORIGIN_NAME} ${ORIGIN_KBPS} kbps at ${CUR_GAIN}%) - going back" \
                 "التجربة اليدوية: $2 ترفع ${trial_kbps} كيلوبت/ث، تحت الحد ${bar} كيلوبت/ث (${ORIGIN_NAME} ${ORIGIN_KBPS} كيلوبت/ث عند ${CUR_GAIN}%) - نرجع"
   if wifi_trial_back; then
     cmd_answer returned "$ORIGIN_NAME" "$ORIGIN_KBPS" "$2" "$trial_kbps"
@@ -3101,7 +3231,7 @@ wifi_cmd_join() {  # $1 = SSID hex, $2 = the blob: MAC check, decrypt, the netwo
     fi
   fi
   wifi_trial_origin "$name"
-  if ! connect_id "$id"; then
+  if ! connect_id "$id" "$TRIAL_ASSOC_WAIT"; then
     reason=$(cmd_reason "$CONNECT_WHY")
     site_log WARN "join: ${name} ${CONNECT_WHY} - removing it, going back to ${ORIGIN_NAME}" \
                   "الانضمام: ${name} ${CONNECT_WHY_AR} - نزيلها ونرجع على ${ORIGIN_NAME}"
@@ -3419,11 +3549,24 @@ main() {
   # capture.sh signals only while this exists (the trap is armed and the one consumer runs): armed
   # here, past the nm_lame park above, so a tap under "monitoring only" is answered by the relay
   # (awacs_old) instead of vanishing.
+  # A held verdict that never reached the site before a stop is re-sent by the healthy tick,
+  # but the hold itself died with the stop: the spooled line loses its hold field so the site
+  # never reads "kept" for a hold that no longer stands.
+  if [[ -s $CMD_ANSWER ]]; then
+    local _sp="" _tab=$'\t'
+    IFS= read -r _sp <"$CMD_ANSWER" || _sp=""
+    if [[ $_sp == *"${_tab}switched${_tab}"* && $_sp =~ ${_tab}hold=[0-9]+$ ]]; then
+      printf '%s\n' "${_sp%"${_tab}"hold=*}" >"$CMD_ANSWER" 2>/dev/null || :
+      llog INFO "a held verdict from before the stop is re-sent without its hold - the hold ended with the stop" \
+                "حكم مثبَّت من قبل التوقف يُعاد إرساله بلا تثبيت - التثبيت انتهى مع التوقف"
+    fi
+  fi
   : >"$CMD_READY" 2>/dev/null || :
   while :; do
     clock_step_check
     wifi_cmd_check "$engaged"   # the one consumer of a site command: never inside a fight
     (( TRIAL_AT > last_dance )) && last_dance=$TRIAL_AT   # a manual trial is a dance for the cooldown
+    hold_check   # a hold from the menu whose time has passed ends here, said once
     (( RB_SAME )) && reboot_failed_check
     apply_profile
     # THE VERDICT. The quick ladder (one ping on a healthy tick, as always); a failure
@@ -3497,10 +3640,15 @@ main() {
         if probe_on && (( flow >= 5 && flow < STREAM_MIN_KBPS )); then
           tnow=$(date +%s)
           if (( ++strikes >= UP_STRIKES && tnow - last_dance >= CUR_COOLDOWN )); then
-            strikes=0; last_dance=$tnow
-            site_log WARN "live stream starving on $(dssid) (${flow} kbps for ${UP_STRIKES} samples, floor ${STREAM_MIN_KBPS}) - evaluating known networks" \
-                          "البث يعاني على $(dssid) (${flow} كيلوبت/ث في ${UP_STRIKES} عينات، الحد ${STREAM_MIN_KBPS}) - جاري تقييم الشبكات"
-            evaluate_here
+            strikes=0
+            # A hold from the menu vetoes the evaluation (said once per hold); the strikes count
+            # again, so the first evaluation after the hold comes as soon as they ripen.
+            if ! hold_eval_veto "$flow" "$STREAM_MIN_KBPS"; then
+              last_dance=$tnow
+              site_log WARN "live stream starving on $(dssid) (${flow} kbps for ${UP_STRIKES} samples, floor ${STREAM_MIN_KBPS}) - evaluating known networks" \
+                            "البث يعاني على $(dssid) (${flow} كيلوبت/ث في ${UP_STRIKES} عينات، الحد ${STREAM_MIN_KBPS}) - جاري تقييم الشبكات"
+              evaluate_here
+            fi
           elif (( strikes >= UP_STRIKES && cd_said != last_dance )); then
             # The cooldown vetoed a ripe evaluation: said once per window (keyed on the dance
             # that opened it), never per strike - a flow around the floor re-ripens every minute.
@@ -3517,13 +3665,17 @@ main() {
         if probe_on && (( flow >= 20 && flow < CUR_MIN_UP )); then   # signal mode: no QA
           tnow=$(date +%s)
           if (( ++strikes >= UP_STRIKES && tnow - last_dance >= CUR_COOLDOWN )); then
-            strikes=0; last_dance=$tnow
+            strikes=0
             # A committed dance CAN outlast the site's 55s online window — the
             # dashboard may show a brief offline blink. Accepted: the dance only
             # ever runs when uploads are ALREADY suffering, never under a viewer.
-            site_log WARN "sustained slow upload on $(dssid) (${flow} kbps for ${UP_STRIKES} samples, floor ${CUR_MIN_UP}) - evaluating known networks" \
-                          "رفع بطيء مستمر على $(dssid) (${flow} كيلوبت/ث في ${UP_STRIKES} عينات، الحد ${CUR_MIN_UP}) - جاري تقييم الشبكات"
-            evaluate_here
+            # A hold from the menu vetoes it (said once per hold); the strikes count again.
+            if ! hold_eval_veto "$flow" "$CUR_MIN_UP"; then
+              last_dance=$tnow
+              site_log WARN "sustained slow upload on $(dssid) (${flow} kbps for ${UP_STRIKES} samples, floor ${CUR_MIN_UP}) - evaluating known networks" \
+                            "رفع بطيء مستمر على $(dssid) (${flow} كيلوبت/ث في ${UP_STRIKES} عينات، الحد ${CUR_MIN_UP}) - جاري تقييم الشبكات"
+              evaluate_here
+            fi
           elif (( strikes >= UP_STRIKES && cd_said != last_dance )); then
             cd_said=$last_dance; left=$(( (CUR_COOLDOWN - (tnow - last_dance) + 59) / 60 ))
             site_log INFO "upload still slow on $(dssid) (${flow} kbps, floor ${CUR_MIN_UP}) - evaluation on cooldown, next look in ${left} min" \
@@ -3538,7 +3690,9 @@ main() {
       # the home router returns. Every PREF_CHECK, if a strictly higher-priority known
       # network is visible for TWO consecutive checks (20min stability — no flapping),
       # go home; if home does not deliver, fall straight back. Zero traffic to look.
-      if ! streaming && (( $(date +%s) - last_pref >= PREF_CHECK )); then
+      # A hold from the menu skips the look (it exists to leave the network); last_pref stays,
+      # so the first look after the hold comes at the next tick.
+      if ! streaming && ! hold_on && (( $(date +%s) - last_pref >= PREF_CHECK )); then
         last_pref=$(date +%s)
         # Supplicant-side scan first: armed scan_ssid makes DIRECTED probes, so a
         # HIDDEN home network becomes visible to the pref check (iw's broadcast scan
@@ -3657,6 +3811,7 @@ main() {
           late_loss "$lost_on"
           site_log WARN "internet lost on ${lost_on} - router ${ROUTER_EN}, engaging" \
                         "انقطع الانترنت عن ${lost_on} - الراوتر ${ROUTER_AR}، بدأ القتال للرجوع"
+          hold_end "internet lost" "انقطع الإنترنت"   # reachability first: the fight chooses the network from here
         fi
         (( ++FIGHT_STREAK ))
         fight && { fails=0; engaged=0; strikes=0
@@ -4003,10 +4158,17 @@ on_shutdown() {  # $1 = signal name. The GRACEFUL box — kept exactly as design
   # First act, before the goodbye: a Ctrl+C landing MID-FIGHT (after a
   # select_network narrowed the live supplicant) must hand back full autonomy.
   enable_all 2>/dev/null || :
-  # A trial's window sleep or probe child would outlive this shell: ended here, so no orphan
-  # holds the trial open after the goodbye (the probe's curl still ends by its own 15 s cap).
+  # A trial's window sleep, head sleep, wait_first timer or probe child would outlive this
+  # shell: ended here, so no orphan holds the trial open after the goodbye (the probe's curl
+  # still ends by its own 15 s cap). An answer child is left to finish its one bounded POST on
+  # a Ctrl+C; a cgroup stop (systemctl stop, a system shutdown) ends it with the group. Either
+  # way an answer that did not land waits in its file for the next start's healthy tick.
   [[ -n $TRIAL_HOLD_PID ]] && { kill "$TRIAL_HOLD_PID" 2>/dev/null || :; }
+  [[ -n $TRIAL_HEAD_PID ]] && { kill "$TRIAL_HEAD_PID" 2>/dev/null || :; }
+  [[ -n $TRIAL_TIMER_PID ]] && { kill "$TRIAL_TIMER_PID" 2>/dev/null || :; }
   [[ -n $TRIAL_PROBE_PID ]] && { kill "$TRIAL_PROBE_PID" 2>/dev/null || :; }
+  hold_on && site_log INFO "hold on ${HOLD_NAME} ends with this stop - the next start judges on its own" \
+                           "التثبيت على ${HOLD_NAME} ينتهي مع هذا الإيقاف - التشغيل القادم يحكم بنفسه"
   cmd_ready_drop
   say_stopping "${1:-TERM}"
     echo

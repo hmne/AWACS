@@ -314,6 +314,10 @@ WARN. The key the site sent matches no stored network (the network was removed f
 
 INFO. The chosen network is the current one; nothing moves and the answer is `switched` with the last measured speed (0 when none).
 
+### `switch asked from the site to HomeNet - already on it, holding it`
+
+INFO. The same, with a hold asked (`hold=<seconds>` in the command's fifth field): no trial, the hold starts now and the answer is `switched NAME KBPS hold=<seconds>`; the `hold on HomeNet for 30 min ...` line follows.
+
 ### `manual trial: OfficeNet for 15 s, leaving HomeNet (1200 kbps) - it stays only at 1800 kbps or more`
 
 INFO, the opening line of every trial. The daemon names where it leaves from, the origin's upload (its last measurement when fresher than 120 s, else one probe now) and the bar the trial must reach: the origin's upload times `SWITCH_GAIN_PCT` (or the night gain) divided by 100, the same bar every challenger meets. Then the connect: a link that forms and delivers internet is answered `trying`.
@@ -326,9 +330,33 @@ OK. The one probe, run inside the 15 s on the trial network, measured it at or a
 
 INFO. The trial network was slower than the bar; the daemon returns to the origin and answers `returned` with both pairs of numbers, and the page says `Back on HomeNet`. This is the owner's design: a manual choice is a trial, never a takeover.
 
+### `manual trial: OfficeNet uploads at 700 kbps, under the 1800 kbps bar (HomeNet 1200 kbps at 150%) - staying anyway, held from the menu`
+
+INFO. The switch asked for a hold and the trial network has internet (the probe carried bytes, or the quick check passed at the verdict), so the slower network is kept as asked; the answer is `switched NAME KBPS hold=<seconds>` and the next line is the hold's. A held switch whose trial meets the bar logs the ordinary `bar met - staying on it` line, then the hold's.
+
+### `hold on OfficeNet for 30 min - no preferred-network return and no evaluation leaves it; an internet loss or a new command ends it`
+
+INFO. The hold has started: for that long (the device's uptime clock) the preferred-network look and the slow-upload evaluation do not run. The recovery is untouched. The trial's opening line named it as well: `... - the bar is 1800 kbps, and it stays for 30 min either way while it has internet`.
+
+### `hold on OfficeNet ended - back to its own judgement`
+
+INFO. The hold's time is up; the next preferred-network look and the next evaluation behave as always. The other two endings: `hold on OfficeNet ended - internet lost` (a real outage: the recovery chooses the network from here) and `hold on OfficeNet ended - a new command from the site` (any command the daemon served; a new held switch starts its own hold).
+
+### `manual trial: OfficeNet measured 0 kbps and fails the internet check - the hold is not taken, going back to HomeNet`
+
+INFO. The switch asked for a hold, but at the verdict the trial network carried no bytes and the quick internet check failed: reachability comes first, the hold is refused and the way back runs as for any slower trial (`back on HomeNet`, the answer `returned`).
+
+### `upload slow on OfficeNet (120 kbps, floor 400) - held from the menu, no evaluation until the hold ends in 25 min`
+
+INFO, once per hold. The slow-upload strikes ripened under a hold; the evaluation that would run now could leave the held network, so it does not run. The strikes count again and the first evaluation after the hold comes as soon as they ripen.
+
+### `hold on OfficeNet ends with this stop - the next start judges on its own`
+
+INFO, in the graceful stop's lines. The hold lives in memory only; the restarted daemon knows nothing of it and returns to a preferred network or evaluates as always.
+
 ### `manual trial: OfficeNet never associated - going back to HomeNet`
 
-WARN. The connect to the trial network failed; the reason is the connect verdict (`never associated`, `not found on the air`, `associated but got no address`, `refused - wrong password?`, `linked but no internet`, `timed out after 25 s`) and the answer's reason token follows it: `wrong_password` for the refusal, `no_internet` for a link without internet, `out_of_reach` for everything else. The daemon goes back to the origin at once. For a join the line starts `join: NAME ... - removing it, going back to HomeNet` and the entry is removed.
+WARN. The connect to the trial network failed; the reason is the connect verdict (`never associated`, `not found on the air`, `associated but got no address`, `refused - wrong password?`, `linked but no internet`, `timed out after 45 s` on NetworkManager) and the answer's reason token follows it: `wrong_password` for the refusal, `no_internet` for a link without internet, `out_of_reach` for everything else. The daemon goes back to the origin at once. The trial's connect waits `TRIAL_ASSOC_WAIT` (45 s, or `ASSOC_WAIT` when larger) where the recovery waits `ASSOC_WAIT`: a new or far network can scan 7 to 23 s before it authenticates, and the wrong-password mark is read for the whole budget, so neither a reachable network nor a wrong password is answered `out_of_reach`. For a join the line starts `join: NAME ... - removing it, going back to HomeNet` and the entry is removed.
 
 ### `back on HomeNet`
 
@@ -376,7 +404,7 @@ WARN, at start. `openssl` is not installed, so no key can be made and no passwor
 
 ### Local lines of the command channel
 
-Four INFO lines stay in the local log and never reach the site, because they describe a line the site could not have meant or already handled: `site command dropped - unreadable line` (the relayed line failed the shape check), `site command scan delivered twice (epoch N) - already handled` (the relay signalled twice for one command; `/run/awacs/cmd.last` caught it), `site switch dropped - no network key` and `site join dropped - no network key or no password` (the command named no network; the site answers those cases itself before sending). The relay's own local lines (`wifi command relayed to awacs`, `wifi command dropped ... awacs is not running`, `... an older build without the command trap`) belong to the reference dashboard's capture script and its local log, not to this daemon.
+Five INFO lines stay in the local log and never reach the site, because they describe a line the site could not have meant or already handled: `site command dropped - unreadable line` (the relayed line failed the shape check), `site command scan delivered twice (epoch N) - already handled` (the relay signalled twice for one command; `/run/awacs/cmd.last` caught it), `site switch dropped - no network key` and `site join dropped - no network key or no password` (the command named no network; the site answers those cases itself before sending), and `site switch: the fifth field is not a hold - switching without one` (a switch whose fifth field is neither empty nor `hold=<1 to 86400>`). The relay's own local lines (`wifi command relayed to awacs`, `wifi command dropped ... awacs is not running`, `... an older build without the command trap`) belong to the reference dashboard's capture script and its local log, not to this daemon.
 
 ## Reporting channels
 

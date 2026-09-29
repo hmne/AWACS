@@ -316,6 +316,10 @@
 
 `INFO`. الشبكة المختارة هي الحالية؛ لا يتحرك شيء والجواب `switched` مع آخر سرعة مقيسة (0 حين لا قياس).
 
+### `switch asked from the site to HomeNet - already on it, holding it`
+
+`INFO`. الحالة نفسها مع طلب تثبيت (`hold=<seconds>` في الحقل الخامس من الأمر): لا تجربة، يبدأ التثبيت الآن والجواب `switched NAME KBPS hold=<seconds>`؛ ويتبعه سطر `hold on HomeNet for 30 min ...`.
+
 ### `manual trial: OfficeNet for 15 s, leaving HomeNet (1200 kbps) - it stays only at 1800 kbps or more`
 
 `INFO`، السطر الافتتاحي لكل تجربة. يسمّي الحارس من أين يترك، ورفع الأصل (آخر قياس له حين يكون أحدث من 120 ثانية، وإلا قياس واحد الآن)، والحد الذي يجب أن تبلغه التجربة: رفع الأصل مضروباً في `SWITCH_GAIN_PCT` (أو نسبة الليل) مقسوماً على 100، وهو الحد نفسه الذي يلقاه كل منافس. ثم الاتصال: الرابط الذي يتشكل ويوصل الإنترنت يُجاب بـ `trying`.
@@ -328,9 +332,33 @@
 
 `INFO`. كانت شبكة التجربة أبطأ من الحد؛ يرجع الحارس إلى الأصل ويجيب بـ `returned` مع زوجَي الأرقام، وتقول الصفحة `Back on HomeNet`. هذا تصميم المالك: الاختيار اليدوي تجربة لا استيلاء.
 
+### `manual trial: OfficeNet uploads at 700 kbps, under the 1800 kbps bar (HomeNet 1200 kbps at 150%) - staying anyway, held from the menu`
+
+`INFO`. طلب التبديل تثبيتاً وفي شبكة التجربة إنترنت (حمل القياس بايتات، أو نجح الفحص السريع عند الحكم)، فتُبقى الشبكة الأبطأ كما طُلب؛ الجواب `switched NAME KBPS hold=<seconds>` والسطر التالي سطر التثبيت. والتبديل المثبَّت الذي تبلغ تجربته الحد يسجّل سطر `bar met - staying on it` المعتاد ثم سطر التثبيت.
+
+### `hold on OfficeNet for 30 min - no preferred-network return and no evaluation leaves it; an internet loss or a new command ends it`
+
+`INFO`. بدأ التثبيت: طوال تلك المدة (بساعة مدة تشغيل الجهاز) لا تجري نظرة الشبكة المفضلة ولا تقييم الرفع البطيء. والإنعاش لا يُمَس. والسطر الافتتاحي للتجربة سمّاه أيضاً: `... - the bar is 1800 kbps, and it stays for 30 min either way while it has internet`.
+
+### `hold on OfficeNet ended - back to its own judgement`
+
+`INFO`. انتهى وقت التثبيت؛ وتعود نظرة الشبكة المفضلة التالية والتقييم التالي إلى سلوكهما المعتاد. والنهايتان الأخريان: `hold on OfficeNet ended - internet lost` (انقطاع حقيقي: الإنعاش يختار الشبكة من هنا) و`hold on OfficeNet ended - a new command from the site` (أي أمر نفّذه الحارس؛ والتبديل المثبَّت الجديد يبدأ تثبيته الخاص).
+
+### `manual trial: OfficeNet measured 0 kbps and fails the internet check - the hold is not taken, going back to HomeNet`
+
+`INFO`. طلب التبديل تثبيتاً، لكن شبكة التجربة عند الحكم لم تحمل بايتات وفشل فحص الإنترنت السريع: الوصول أولاً، فيُرفَض التثبيت ويجري طريق العودة كأي تجربة أبطأ (`back on HomeNet` والجواب `returned`).
+
+### `upload slow on OfficeNet (120 kbps, floor 400) - held from the menu, no evaluation until the hold ends in 25 min`
+
+`INFO`، مرة لكل تثبيت. اكتملت ضربات الرفع البطيء أثناء تثبيت؛ والتقييم الذي كان سيجري الآن قد يترك الشبكة المثبَّتة، فلا يجري. وتُعدّ الضربات من جديد، ويأتي أول تقييم بعد التثبيت ما إن تكتمل.
+
+### `hold on OfficeNet ends with this stop - the next start judges on its own`
+
+`INFO`، ضمن أسطر الإيقاف السلس. يعيش التثبيت في الذاكرة فقط؛ والحارس المعاد تشغيله لا يعرف عنه شيئاً ويرجع إلى شبكة مفضلة أو يقيّم كالعادة.
+
 ### `manual trial: OfficeNet never associated - going back to HomeNet`
 
-`WARN`. فشل الاتصال بشبكة التجربة؛ والسبب هو حكم الاتصال (`never associated` أو `not found on the air` أو `associated but got no address` أو `refused - wrong password?` أو `linked but no internet` أو `timed out after 25 s`) ويتبعه رمز سبب الجواب: `wrong_password` للرفض، و`no_internet` لرابط بلا إنترنت، و`out_of_reach` لكل ما عداهما. يرجع الحارس إلى الأصل فوراً. وللانضمام يبدأ السطر بـ `join: NAME ... - removing it, going back to HomeNet` ويُزال المدخل.
+`WARN`. فشل الاتصال بشبكة التجربة؛ والسبب هو حكم الاتصال (`never associated` أو `not found on the air` أو `associated but got no address` أو `refused - wrong password?` أو `linked but no internet` أو `timed out after 45 s` على NetworkManager) ويتبعه رمز سبب الجواب: `wrong_password` للرفض، و`no_internet` لرابط بلا إنترنت، و`out_of_reach` لكل ما عداهما. يرجع الحارس إلى الأصل فوراً. ينتظر اتصال التجربة `TRIAL_ASSOC_WAIT` (45 ثانية، أو `ASSOC_WAIT` حين تكون أكبر) حيث ينتظر الإنعاش `ASSOC_WAIT`: الشبكة الجديدة أو البعيدة قد تمسح 7 إلى 23 ثانية قبل أن تصادق، وتُقرأ علامة كلمة السر الخاطئة طوال الميزانية، فلا تُجاب شبكة في المتناول بـ `out_of_reach` ولا كلمة سر خاطئة كذلك. وللانضمام يبدأ السطر بـ `join: NAME ... - removing it, going back to HomeNet` ويُزال المدخل.
 
 ### `back on HomeNet`
 
@@ -378,7 +406,7 @@
 
 ### الأسطر المحلية لقناة الأوامر
 
-أربعة أسطر `INFO` تبقى في السجل المحلي ولا تصل إلى الموقع أبداً، لأنها تصف سطراً لم يقصده الموقع أو سبق تنفيذه: `site command dropped - unreadable line` (السطر المنقول لم يجتز فحص الشكل)، و`site command scan delivered twice (epoch N) - already handled` (أرسل الناقل الإشارة مرتين لأمر واحد؛ التقطها `/run/awacs/cmd.last`)، و`site switch dropped - no network key` و`site join dropped - no network key or no password` (لم يسمّ الأمر شبكة؛ والموقع يجيب عن هذه الحالات بنفسه قبل الإرسال). أما أسطر الناقل المحلية (`wifi command relayed to awacs`، و`wifi command dropped ... awacs is not running`، و`... an older build without the command trap`) فتخص سكربت التصوير في لوحة المتابعة المرجعية وسجله المحلي لا هذا الحارس.
+خمسة أسطر `INFO` تبقى في السجل المحلي ولا تصل إلى الموقع أبداً، لأنها تصف سطراً لم يقصده الموقع أو سبق تنفيذه: `site command dropped - unreadable line` (السطر المنقول لم يجتز فحص الشكل)، و`site command scan delivered twice (epoch N) - already handled` (أرسل الناقل الإشارة مرتين لأمر واحد؛ التقطها `/run/awacs/cmd.last`)، و`site switch dropped - no network key` و`site join dropped - no network key or no password` (لم يسمّ الأمر شبكة؛ والموقع يجيب عن هذه الحالات بنفسه قبل الإرسال)، و`site switch: the fifth field is not a hold - switching without one` (تبديل حقله الخامس ليس فارغاً ولا `hold=<1 إلى 86400>`). أما أسطر الناقل المحلية (`wifi command relayed to awacs`، و`wifi command dropped ... awacs is not running`، و`... an older build without the command trap`) فتخص سكربت التصوير في لوحة المتابعة المرجعية وسجله المحلي لا هذا الحارس.
 
 ## التقارير
 
